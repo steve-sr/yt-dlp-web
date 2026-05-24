@@ -180,9 +180,23 @@ def progress_hook(job_id):
 
     return hook
 
+def get_cookie_file():
+    secret_cookie = "/etc/secrets/cookies.txt"
+    temp_cookie = "/tmp/cookies.txt"
+
+    if os.path.exists(secret_cookie):
+        with open(secret_cookie, "rb") as src:
+            with open(temp_cookie, "wb") as dst:
+                dst.write(src.read())
+
+        return temp_cookie
+
+    return None
+
 def download_task(job_id, url, download_type, quality):
     try:
         before_files = set(os.listdir(DOWNLOAD_DIR))
+        cookie_file = get_cookie_file()
 
         ydl_opts = {
             "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).160s.%(ext)s"),
@@ -192,8 +206,6 @@ def download_task(job_id, url, download_type, quality):
             "no_warnings": True,
             "noprogress": False,
             "nopart": False,
-            "cookiefile": "/etc/secrets/cookies.txt",
-            "no_cookies_update": True,
         }
 
         if download_type == "mp3":
