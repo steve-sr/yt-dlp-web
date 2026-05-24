@@ -3,10 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SR Web Downloader</title>
+  <title>MediaDrop</title>
 
   <link rel="stylesheet" href="/static/style.css" />
-
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
@@ -16,11 +15,11 @@
     <section class="hero">
       <div class="badge">
         <i data-lucide="zap"></i>
-        SR Web Downloader
+        Web Downloader
       </div>
 
       <h1>Descarga videos, audio y playlists</h1>
-      <p>Una app web rápida, limpia y optimizada</p>
+      <p>Una app web rápida, limpia y optimizada para celular.</p>
     </section>
 
     <section class="panel">
@@ -147,6 +146,21 @@
       <i data-lucide="file-down"></i>
       Descargar archivo listo
     </a>
+
+    <div id="modalOverlay" class="modal-overlay hidden">
+      <div class="modal">
+        <div id="modalIcon" class="modal-icon">
+          <i data-lucide="info"></i>
+        </div>
+
+        <h3 id="modalTitle">Título</h3>
+        <p id="modalMessage">Mensaje</p>
+
+        <button onclick="closeModal()" class="modal-btn">
+          Aceptar
+        </button>
+      </div>
+    </div>
   </main>
 
   <script src="/static/script.js"></script>
