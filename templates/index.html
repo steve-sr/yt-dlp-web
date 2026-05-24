@@ -25,26 +25,27 @@
     <section class="panel">
       <label>Pega la URL aquí</label>
 
-      <div class="input-row">
+      <div class="input-row single">
         <div class="url-box">
           <i data-lucide="link"></i>
-          <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=..." />
+          <input id="url" type="text" placeholder="Pega aquí un enlace de YouTube, Playlist, Reel o TikTok..." />
         </div>
-
-        <button class="paste-btn" onclick="pasteUrl()">
-          <i data-lucide="clipboard"></i>
-          Pegar
-        </button>
       </div>
 
-      <button class="preview-btn" onclick="loadInfo()">
-        <i data-lucide="search"></i>
-        Obtener información
-      </button>
+      <div id="autoInfoStatus" class="auto-info-status">
+        Esperando enlace...
+      </div>
     </section>
 
     <section id="preview" class="preview hidden">
-      <img id="thumbnail" src="" alt="Miniatura" />
+      <div id="thumbnailBox" class="thumbnail-box">
+        <img id="thumbnail" src="" alt="Miniatura" />
+
+        <div id="platformFallback" class="platform-fallback hidden">
+          <i id="platformIcon" data-lucide="video"></i>
+          <span id="platformLabel">Video</span>
+        </div>
+      </div>
 
       <div class="preview-info">
         <h2 id="videoTitle">Título del video</h2>
@@ -64,25 +65,25 @@
     </section>
 
     <section class="types">
-      <button class="type active" data-type="video">
+      <button class="type active" data-type="video" disabled>
         <i data-lucide="video"></i>
         <strong>Video</strong>
         <span>MP4 en buena calidad</span>
       </button>
 
-      <button class="type" data-type="mp3">
+      <button class="type" data-type="mp3" disabled>
         <i data-lucide="music"></i>
         <strong>MP3</strong>
         <span>Audio extraído</span>
       </button>
 
-      <button class="type" data-type="playlist">
+      <button class="type" data-type="playlist" disabled>
         <i data-lucide="list-video"></i>
         <strong>Playlist</strong>
         <span>Lista completa</span>
       </button>
 
-      <button class="type" data-type="reels">
+      <button class="type" data-type="reels" disabled>
         <i data-lucide="smartphone"></i>
         <strong>Reels / TikTok</strong>
         <span>Videos cortos</span>
@@ -95,11 +96,8 @@
 
         <div class="select-wrap">
           <i data-lucide="sliders-horizontal"></i>
-          <select id="quality">
-            <option value="best">Máxima calidad</option>
-            <option value="1080p">1080p</option>
-            <option value="720p">720p</option>
-            <option value="480p">480p</option>
+          <select id="quality" disabled>
+            <option value="">Primero pega un enlace</option>
           </select>
         </div>
       </div>
@@ -113,7 +111,61 @@
       </div>
     </section>
 
-    <button id="downloadBtn" class="download" onclick="startDownload()">
+    <section class="tools-grid">
+      <button class="tool-btn" onclick="loadStatus()">
+        <i data-lucide="activity"></i>
+        Estado
+      </button>
+
+      <button class="tool-btn" onclick="loadHistory()">
+        <i data-lucide="history"></i>
+        Historial
+      </button>
+
+      <button class="tool-btn" onclick="clearDownloads()">
+        <i data-lucide="trash-2"></i>
+        Limpiar descargas
+      </button>
+    </section>
+
+    <section id="statusPanel" class="panel hidden">
+      <label>Estado del servidor</label>
+
+      <div class="status-grid">
+        <div class="status-item">
+          <strong>yt-dlp</strong>
+          <span id="statusYtdlp">--</span>
+        </div>
+
+        <div class="status-item">
+          <strong>FFmpeg</strong>
+          <span id="statusFfmpeg">--</span>
+        </div>
+
+        <div class="status-item">
+          <strong>Carpeta</strong>
+          <span id="statusFolder">--</span>
+        </div>
+
+        <div class="status-item">
+          <strong>Archivos</strong>
+          <span id="statusFiles">--</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="historyPanel" class="panel hidden">
+      <label>Historial</label>
+
+      <div id="historyList" class="history-list"></div>
+
+      <button class="preview-btn" onclick="clearHistory()">
+        <i data-lucide="trash"></i>
+        Limpiar historial
+      </button>
+    </section>
+
+    <button id="downloadBtn" class="download" onclick="startDownload()" disabled>
       <i data-lucide="download"></i>
       Iniciar descarga
     </button>
@@ -142,10 +194,20 @@
       </div>
     </section>
 
-    <a id="downloadLink" class="download-link hidden" href="#">
-      <i data-lucide="file-down"></i>
-      Descargar archivo listo
-    </a>
+   <section id="readyCard" class="ready-card hidden">
+      <h3>Archivo listo</h3>
+      <p id="readyFileInfo">Tu archivo ya está preparado.</p>
+
+      <div class="ready-actions">
+        <a id="downloadLink" href="#">
+          Descargar archivo
+        </a>
+
+        <button onclick="newDownload()">
+          Nueva descarga
+        </button>
+      </div>
+    </section>
 
     <div id="modalOverlay" class="modal-overlay hidden">
       <div class="modal">

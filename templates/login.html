@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>SR WEB DOWNLOADER - Login</title>
+
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+
+<body>
+  <main class="login-screen">
+    <section class="login-card">
+      <div class="login-icon">
+        <i data-lucide="lock-keyhole"></i>
+      </div>
+
+      <h1>SR WEB DOWNLOADER - Login</h1>
+      <p>Ingresa tu PIN para continuar.</p>
+
+      <input id="pinInput" type="password" placeholder="PIN de acceso" maxlength="8" />
+
+      <button onclick="login()" class="login-btn">
+        <i data-lucide="log-in"></i>
+        Entrar
+      </button>
+
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    async function login() {
+      const pin = $("pinInput").value.trim();
+
+      if (!pin) {
+        alert("Ingresa el PIN.");
+        return;
+      }
+
+      const res = await fetch("/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ pin })
+      });
+
+      const data = await res.json();
+
+      if (!data.success) {
+        alert(data.error || "PIN incorrecto");
+        return;
+      }
+
+      window.location.href = "/";
+    }
+
+    $("pinInput").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        login();
+      }
+    });
+
+    lucide.createIcons();
+  </script>
+</body>
+</html>

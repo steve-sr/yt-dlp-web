@@ -4,8 +4,12 @@ eventlet.monkey_patch()
 import os
 import re
 import uuid
+import json
+import shutil
+import subprocess
+from datetime import datetime
 import yt_dlp
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect
 from flask_socketio import SocketIO
 
 app = Flask(__name__)
@@ -17,10 +21,40 @@ socketio = SocketIO(
     async_mode="eventlet"
 )
 
-DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
+BASE_DIR = os.getcwd()
+DOWNLOAD_DIR = os.path.join(BASE_DIR, "downloads")
+DATA_DIR = os.path.join(BASE_DIR, "data")
+HISTORY_FILE = os.path.join(DATA_DIR, "history.json")
+
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
+
+APP_PIN = os.environ.get("MEDIADROP_PIN", "1234")
 
 jobs = {}
+
+
+def load_history():
+    if not os.path.exists(HISTORY_FILE):
+        return []
+
+    try:
+        with open(HISTORY_FILE, "r", encoding="utf-8") as file:
+            return json.load(file)
+    except Exception:
+        return []
+
+
+def save_history(history):
+    with open(HISTORY_FILE, "w", encoding="utf-8") as file:
+        json.dump(history, file, indent=2, ensure_ascii=False)
+
+
+def add_history(item):
+    history = load_history()
+    history.insert(0, item)
+    history = history[:50]
+    save_history(history)
 
 
 def seconds_to_time(seconds):
@@ -52,10 +86,10 @@ def clean_error(error):
     msg = str(error)
 
     if "Requested format is not available" in msg:
-        return "El formato solicitado no está disponible. Prueba con otra calidad o con MP3."
+        return "El formato solicitado no está disponible. Prueba otra calidad o MP3."
 
     if "Sign in to confirm" in msg or "not a bot" in msg:
-        return "YouTube está pidiendo verificación. Prueba otro video o actualiza yt-dlp."
+        return "YouTube pidió verificación. Como estás local, prueba actualizar yt-dlp o usar otro video."
 
     return msg
 
@@ -147,13 +181,304 @@ def get_newest_file(before_files):
     )[0]
 
 
+def get_file_size(filename):
+    path = os.path.join(DOWNLOAD_DIR, filename)
+
+    if not os.path.exists(path):
+        return "Desconocido"
+
+    size = os.path.getsize(path)
+
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+
+    if size < 1024 * 1024 * 1024:
+        return f"{size / (1024 * 1024):.1f} MB"
+
+    return f"{size / (1024 * 1024 * 1024):.1f} GB"
+
+
+def check_command(command):
+    try:
+        subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+        return True
+    except Exception:
+        return False
+
+
 @app.route("/")
 def index():
+    if not session.get("authenticated"):
+        return render_template("login.html")
+
     return render_template("index.html")
 
 
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.json or {}
+    pin = data.get("pin", "")
+
+    if pin == APP_PIN:
+        session["authenticated"] = True
+        return jsonify({"success": True})
+
+    return jsonify({"success": False, "error": "PIN incorrecto"}), 401
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"success": True})
+
+def extract_available_qualities(info):
+    formats = info.get("formats", [])
+    qualities = {}
+
+    for fmt in formats:
+        height = fmt.get("height")
+        ext = fmt.get("ext")
+        vcodec = fmt.get("vcodec")
+
+        if not height:
+            continue
+
+        if vcodec == "none":
+            continue
+
+        if height < 144:
+            continue
+
+        label = f"{height}p"
+
+        if label not in qualities:
+            qualities[label] = {
+                "label": label,
+                "value": str(height),
+                "height": height,
+                "ext": ext or "desconocido"
+            }
+
+    result = sorted(
+        qualities.values(),
+        key=lambda item: item["height"],
+        reverse=True
+    )
+
+    return result
+
+def extract_available_qualities(info):
+    formats = info.get("formats", [])
+    qualities = {}
+
+    for fmt in formats:
+        height = fmt.get("height")
+        vcodec = fmt.get("vcodec")
+
+        if not height:
+            continue
+
+        if vcodec == "none":
+            continue
+
+        if height < 144:
+            continue
+
+        label = f"{height}p"
+
+        if label not in qualities:
+            qualities[label] = {
+                "label": label,
+                "value": str(height),
+                "height": height,
+            }
+
+    result = sorted(
+        qualities.values(),
+        key=lambda item: item["height"],
+        reverse=True
+    )
+
+    return result
+
+
+def classify_link(url, info):
+    url_lower = url.lower()
+
+    is_playlist = "playlist" in url_lower or "list=" in url_lower
+    is_tiktok = "tiktok.com" in url_lower
+    is_instagram_reel = "instagram.com/reel" in url_lower or "instagram.com/reels" in url_lower
+    is_youtube_shorts = "youtube.com/shorts" in url_lower or "youtu.be/shorts" in url_lower
+    is_youtube_music = "music.youtube.com" in url_lower
+    is_youtube = "youtube.com" in url_lower or "youtu.be" in url_lower
+
+    has_music_metadata = bool(
+        info.get("track") or
+        info.get("artist") or
+        info.get("album")
+    )
+
+    if is_playlist:
+        return {
+            "media_type": "playlist",
+            "platform": "youtube",
+            "platform_label": "YouTube Playlist",
+            "platform_icon": "list-video",
+            "allowed_types": ["playlist"],
+            "default_type": "playlist",
+            "label": "Playlist detectada"
+        }
+
+    if is_tiktok:
+        return {
+            "media_type": "short",
+            "platform": "tiktok",
+            "platform_label": "TikTok",
+            "platform_icon": "music-2",
+            "allowed_types": ["mp3", "reels"],
+            "default_type": "reels",
+            "label": "TikTok detectado"
+        }
+
+    if is_instagram_reel:
+        return {
+            "media_type": "short",
+            "platform": "instagram",
+            "platform_label": "Instagram Reel",
+            "platform_icon": "instagram",
+            "allowed_types": ["mp3", "reels"],
+            "default_type": "reels",
+            "label": "Instagram Reel detectado"
+        }
+
+    if is_youtube_shorts:
+        return {
+            "media_type": "short",
+            "platform": "youtube_shorts",
+            "platform_label": "YouTube Shorts",
+            "platform_icon": "badge-play",
+            "allowed_types": ["mp3", "reels"],
+            "default_type": "reels",
+            "label": "YouTube Short detectado"
+        }
+
+    if is_youtube_music or has_music_metadata:
+        return {
+            "media_type": "music",
+            "platform": "youtube_music",
+            "platform_label": "YouTube Music",
+            "platform_icon": "music",
+            "allowed_types": ["mp3"],
+            "default_type": "mp3",
+            "label": "Canción detectada"
+        }
+
+    if is_youtube:
+        return {
+            "media_type": "video",
+            "platform": "youtube",
+            "platform_label": "YouTube",
+            "platform_icon": "youtube",
+            "allowed_types": ["video", "mp3"],
+            "default_type": "video",
+            "label": "Video de YouTube detectado"
+        }
+
+    return {
+        "media_type": "video",
+        "platform": "generic",
+        "platform_label": "Video",
+        "platform_icon": "video",
+        "allowed_types": ["video", "mp3"],
+        "default_type": "video",
+        "label": "Video detectado"
+    }
+def get_best_thumbnail(info):
+    thumbnail = info.get("thumbnail")
+
+    if thumbnail:
+        return thumbnail
+
+    thumbnails = info.get("thumbnails", [])
+
+    if not thumbnails:
+        return ""
+
+    valid_thumbnails = []
+
+    for item in thumbnails:
+        url = item.get("url")
+        width = item.get("width") or 0
+        height = item.get("height") or 0
+
+        if url:
+            valid_thumbnails.append({
+                "url": url,
+                "score": width * height
+            })
+
+    if not valid_thumbnails:
+        return ""
+
+    best = sorted(
+        valid_thumbnails,
+        key=lambda item: item["score"],
+        reverse=True
+    )[0]
+
+    return best["url"]
+
+def quick_classify_url(url):
+    url_lower = url.lower()
+
+    if "tiktok.com" in url_lower:
+        return {
+            "is_quick": True,
+            "title": "TikTok detectado",
+            "thumbnail": "",
+            "uploader": "TikTok",
+            "duration": "Desconocido",
+            "webpage_url": url,
+            "qualities": [],
+            "media_type": "short",
+            "platform": "tiktok",
+            "platform_label": "TikTok",
+            "platform_icon": "music-2",
+            "allowed_types": ["mp3", "reels"],
+            "default_type": "reels",
+            "label": "TikTok detectado"
+        }
+
+    if "instagram.com/reel" in url_lower or "instagram.com/reels" in url_lower:
+        return {
+            "is_quick": True,
+            "title": "Instagram Reel detectado",
+            "thumbnail": "",
+            "uploader": "Instagram",
+            "duration": "Desconocido",
+            "webpage_url": url,
+            "qualities": [],
+            "media_type": "short",
+            "platform": "instagram",
+            "platform_label": "Instagram Reel",
+            "platform_icon": "instagram",
+            "allowed_types": ["mp3", "reels"],
+            "default_type": "reels",
+            "label": "Instagram Reel detectado"
+        }
+
+    return None
+
 @app.route("/info", methods=["POST"])
 def get_video_info():
+    if not session.get("authenticated"):
+        return jsonify({"error": "No autorizado"}), 401
+
     data = request.json or {}
     url = data.get("url", "").strip()
 
@@ -161,34 +486,47 @@ def get_video_info():
         return jsonify({"error": "URL requerida"}), 400
 
     try:
+        quick_info = quick_classify_url(url)
+        if quick_info:
+            return jsonify(quick_info)
+        
         opts = base_ydl_opts()
         opts.update({
             "skip_download": True,
-            "noplaylist": True,
+            "noplaylist": False,
+            "extract_flat": False,
         })
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
+        link_data = classify_link(url, info)
+        qualities = extract_available_qualities(info)
+
         return jsonify({
             "title": info.get("title", "Sin título"),
-            "thumbnail": info.get("thumbnail"),
+            "thumbnail": get_best_thumbnail(info),
             "uploader": info.get("uploader", "Desconocido"),
             "duration": seconds_to_time(info.get("duration")),
             "webpage_url": info.get("webpage_url", url),
+            "qualities": qualities,
+            **link_data
         })
 
     except Exception as e:
         return jsonify({"error": clean_error(e)}), 500
 
-
 @app.route("/start", methods=["POST"])
 def start_download():
+    if not session.get("authenticated"):
+        return jsonify({"error": "No autorizado"}), 401
+
     data = request.json or {}
 
     url = data.get("url", "").strip()
     download_type = data.get("type", "video")
     quality = data.get("quality", "best")
+    title = data.get("title", "")
 
     if not url:
         return jsonify({"error": "URL requerida"}), 400
@@ -202,6 +540,9 @@ def start_download():
         "filename": None,
         "speed": "",
         "eta": "",
+        "title": title,
+        "type": download_type,
+        "url": url,
     }
 
     socketio.start_background_task(
@@ -209,7 +550,8 @@ def start_download():
         job_id,
         url,
         download_type,
-        quality
+        quality,
+        title
     )
 
     return jsonify({"job_id": job_id})
@@ -217,6 +559,9 @@ def start_download():
 
 @app.route("/download/<job_id>")
 def download_file(job_id):
+    if not session.get("authenticated"):
+        return redirect("/")
+
     job = jobs.get(job_id)
 
     if not job or not job.get("filename"):
@@ -229,7 +574,51 @@ def download_file(job_id):
     )
 
 
-def download_task(job_id, url, download_type, quality):
+@app.route("/history")
+def history():
+    if not session.get("authenticated"):
+        return jsonify({"error": "No autorizado"}), 401
+
+    return jsonify(load_history())
+
+
+@app.route("/clear-history", methods=["POST"])
+def clear_history():
+    if not session.get("authenticated"):
+        return jsonify({"error": "No autorizado"}), 401
+
+    save_history([])
+    return jsonify({"success": True})
+
+
+@app.route("/clear-downloads", methods=["POST"])
+def clear_downloads():
+    if not session.get("authenticated"):
+        return jsonify({"error": "No autorizado"}), 401
+
+    for filename in os.listdir(DOWNLOAD_DIR):
+        path = os.path.join(DOWNLOAD_DIR, filename)
+
+        if os.path.isfile(path):
+            os.remove(path)
+
+    return jsonify({"success": True})
+
+
+@app.route("/server-status")
+def server_status():
+    if not session.get("authenticated"):
+        return jsonify({"error": "No autorizado"}), 401
+
+    return jsonify({
+        "yt_dlp": check_command(["yt-dlp", "--version"]),
+        "ffmpeg": check_command(["ffmpeg", "-version"]),
+        "downloads_folder": os.path.exists(DOWNLOAD_DIR),
+        "downloads_count": len(os.listdir(DOWNLOAD_DIR)),
+    })
+
+
+def download_task(job_id, url, download_type, quality, title=""):
     try:
         before_files = set(os.listdir(DOWNLOAD_DIR))
 
@@ -242,22 +631,24 @@ def download_task(job_id, url, download_type, quality):
         })
 
         if download_type == "mp3":
+            audio_quality = quality if quality in ["320", "192", "128"] else "320"
+
             ydl_opts.update({
                 "format": "bestaudio/best",
                 "postprocessors": [{
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
-                    "preferredquality": "320",
+                    "preferredquality": audio_quality,
                 }],
             })
 
         else:
-            if quality == "1080p":
-                fmt = "bv*[height<=1080]+ba/b[height<=1080]/best[height<=1080]/best"
-            elif quality == "720p":
-                fmt = "bv*[height<=720]+ba/b[height<=720]/best[height<=720]/best"
-            elif quality == "480p":
-                fmt = "bv*[height<=480]+ba/b[height<=480]/best[height<=480]/best"
+            if quality and quality != "best":
+                try:
+                    height = int(quality)
+                    fmt = f"bv*[height<={height}]+ba/b[height<={height}]/best[height<={height}]/best"
+                except ValueError:
+                    fmt = "bv*+ba/best"
             else:
                 fmt = "bv*+ba/best"
 
@@ -280,11 +671,24 @@ def download_task(job_id, url, download_type, quality):
         if not filename:
             raise Exception("No se generó ningún archivo.")
 
+        file_size = get_file_size(filename)
+
+        add_history({
+            "title": title or filename,
+            "url": url,
+            "type": download_type,
+            "quality": quality,
+            "filename": filename,
+            "size": file_size,
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        })
+
         emit_progress(job_id, {
             "status": "done",
             "progress": 100,
             "message": "Descarga lista",
             "filename": filename,
+            "file_size": file_size,
         })
 
     except Exception as e:
@@ -302,6 +706,7 @@ if __name__ == "__main__":
     print("Servidor iniciado correctamente")
     print(f"Abre en tu Mac: http://127.0.0.1:{port}")
     print(f"Para celular usa: http://IP-DE-TU-MAC:{port}")
+    print(f"PIN: {APP_PIN}")
     print("")
 
     socketio.run(

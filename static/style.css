@@ -565,3 +565,434 @@ button:hover {
     transform: scale(1) translateY(0);
   }
 }
+
+.login-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: min(430px, 100%);
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 30px;
+  padding: 32px;
+  text-align: center;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45);
+}
+
+.login-icon {
+  width: 74px;
+  height: 74px;
+  margin: 0 auto 18px;
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  background: rgba(147, 51, 234, 0.16);
+  color: var(--purple-2);
+}
+
+.login-icon svg {
+  width: 36px;
+  height: 36px;
+}
+
+.login-card h1 {
+  margin: 0 0 8px;
+  font-size: 38px;
+}
+
+.login-card p {
+  color: var(--muted);
+  margin: 0 0 24px;
+}
+
+.login-card input {
+  width: 100%;
+  height: 58px;
+  background: #020617;
+  color: white;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 0 18px;
+  font-size: 18px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.login-btn {
+  width: 100%;
+  height: 58px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: white;
+  font-weight: 900;
+  font-size: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.login-hint {
+  display: block;
+  margin-top: 16px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.tools-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin: 22px 0;
+}
+
+.tool-btn {
+  min-height: 82px;
+  border-radius: 22px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid var(--border);
+  color: white;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-weight: 900;
+}
+
+.tool-btn:hover {
+  background: #111827;
+}
+
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.status-item {
+  background: #020617;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 14px;
+}
+
+.status-item strong {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.status-ok {
+  color: #22c55e;
+  font-weight: 900;
+}
+
+.status-bad {
+  color: #ef4444;
+  font-weight: 900;
+}
+
+.history-list {
+  display: grid;
+  gap: 12px;
+}
+
+.history-item {
+  background: #020617;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+}
+
+.history-item strong {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.history-meta {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.ready-card {
+  margin-top: 22px;
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  border-radius: 24px;
+  padding: 22px;
+  animation: fadeUp 0.3s ease;
+}
+
+.ready-card h3 {
+  margin: 0 0 8px;
+}
+
+.ready-card p {
+  margin: 0 0 16px;
+  color: #bbf7d0;
+}
+
+.ready-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.ready-actions a,
+.ready-actions button {
+  height: 54px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  text-decoration: none;
+  color: white;
+  font-weight: 900;
+}
+
+.ready-actions a {
+  background: #22c55e;
+}
+
+.ready-actions button {
+  background: #1e293b;
+}
+
+@media (max-width: 850px) {
+  .tools-grid,
+  .status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ready-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+#statusPanel {
+  margin-bottom: 22px;
+}
+
+#historyPanel {
+  margin-top: 22px;
+  margin-bottom: 22px;
+}
+
+#statusPanel,
+#historyPanel {
+  animation: fadeUp 0.25s ease;
+}
+
+.input-row.single {
+  grid-template-columns: 1fr;
+}
+
+.auto-info-status {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.auto-info-status.loading {
+  color: #a855f7;
+}
+
+.auto-info-status.success {
+  color: #22c55e;
+}
+
+.auto-info-status.error {
+  color: #ef4444;
+}
+
+.type:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+.type:disabled:hover {
+  transform: none;
+}
+
+.download:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.thumbnail-empty {
+  background:
+    linear-gradient(135deg, rgba(147, 51, 234, 0.22), rgba(56, 189, 248, 0.12)),
+    #020617;
+  position: relative;
+}
+
+.thumbnail-empty::after {
+  content: "Sin miniatura";
+  color: #94a3b8;
+}
+
+.preview img.thumbnail-empty {
+  background:
+    linear-gradient(135deg, rgba(147, 51, 234, 0.22), rgba(56, 189, 248, 0.12)),
+    #020617;
+  object-fit: contain;
+}
+
+.thumbnail-box {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #020617;
+  border: 1px solid var(--border);
+  position: relative;
+}
+
+.thumbnail-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.platform-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 18px;
+}
+
+.platform-fallback svg {
+  width: 58px;
+  height: 58px;
+}
+
+.platform-fallback span {
+  display: block;
+  font-weight: 900;
+  font-size: 18px;
+}
+
+.platform-fallback.tiktok {
+  background:
+    radial-gradient(circle at 25% 25%, rgba(56, 189, 248, 0.28), transparent 35%),
+    radial-gradient(circle at 75% 75%, rgba(236, 72, 153, 0.28), transparent 35%),
+    #020617;
+  color: #ffffff;
+}
+
+.platform-fallback.instagram {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(245, 158, 11, 0.35), transparent 34%),
+    radial-gradient(circle at 80% 30%, rgba(236, 72, 153, 0.35), transparent 35%),
+    radial-gradient(circle at 50% 85%, rgba(147, 51, 234, 0.35), transparent 36%),
+    #020617;
+  color: #ffffff;
+}
+
+.platform-fallback.youtube,
+.platform-fallback.youtube_shorts,
+.platform-fallback.youtube_music {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(239, 68, 68, 0.24), transparent 45%),
+    #020617;
+  color: #ffffff;
+}
+
+.platform-fallback.generic {
+  background:
+    linear-gradient(135deg, rgba(147, 51, 234, 0.25), rgba(56, 189, 248, 0.16)),
+    #020617;
+  color: #ffffff;
+}
+
+.thumbnail-box {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #020617;
+  border: 1px solid var(--border);
+  position: relative;
+}
+
+.thumbnail-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Evita que el ícono de imagen rota aparezca */
+.thumbnail-box img.hidden {
+  display: none !important;
+}
+
+.platform-fallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 18px;
+}
+
+.platform-fallback svg {
+  width: 58px;
+  height: 58px;
+}
+
+.platform-fallback span {
+  display: block;
+  font-weight: 900;
+  font-size: 18px;
+}
+
+.platform-fallback.instagram {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(245, 158, 11, 0.35), transparent 34%),
+    radial-gradient(circle at 80% 30%, rgba(236, 72, 153, 0.35), transparent 35%),
+    radial-gradient(circle at 50% 85%, rgba(147, 51, 234, 0.35), transparent 36%),
+    #020617;
+  color: #ffffff;
+}
+
+.platform-fallback.tiktok {
+  background:
+    radial-gradient(circle at 25% 25%, rgba(56, 189, 248, 0.28), transparent 35%),
+    radial-gradient(circle at 75% 75%, rgba(236, 72, 153, 0.28), transparent 35%),
+    #020617;
+  color: #ffffff;
+}
+
+.platform-fallback.youtube,
+.platform-fallback.youtube_shorts,
+.platform-fallback.youtube_music {
+  background:
+    radial-gradient(circle at 50% 50%, rgba(239, 68, 68, 0.24), transparent 45%),
+    #020617;
+  color: #ffffff;
+}
+
+.platform-fallback.generic {
+  background:
+    linear-gradient(135deg, rgba(147, 51, 234, 0.25), rgba(56, 189, 248, 0.16)),
+    #020617;
+  color: #ffffff;
+}
