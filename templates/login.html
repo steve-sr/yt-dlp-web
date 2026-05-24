@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>SR WEB DOWNLOADER - Login</title>
+  <title>SR IDEAS</title>
 
   <link rel="stylesheet" href="/static/style.css" />
   <script src="https://unpkg.com/lucide@latest"></script>
@@ -17,7 +17,7 @@
         <i data-lucide="lock-keyhole"></i>
       </div>
 
-      <h1>SR WEB DOWNLOADER - Login</h1>
+      <h1>MediaDrop</h1>
       <p>Ingresa tu PIN para continuar.</p>
 
       <input id="pinInput" type="password" placeholder="PIN de acceso" maxlength="8" />
@@ -26,37 +26,84 @@
         <i data-lucide="log-in"></i>
         Entrar
       </button>
-
     </section>
+
+    <div id="modalOverlay" class="modal-overlay hidden">
+      <div class="modal">
+        <div id="modalIcon" class="modal-icon">
+          <i data-lucide="info"></i>
+        </div>
+
+        <h3 id="modalTitle">Título</h3>
+        <p id="modalMessage">Mensaje</p>
+
+        <button onclick="closeModal()" class="modal-btn">
+          Aceptar
+        </button>
+      </div>
+    </div>
   </main>
 
   <script>
     const $ = (id) => document.getElementById(id);
 
+    function showModal(type, title, message) {
+      const overlay = $("modalOverlay");
+      const iconBox = $("modalIcon");
+      const titleBox = $("modalTitle");
+      const messageBox = $("modalMessage");
+
+      let icon = "info";
+
+      if (type === "success") icon = "check-circle";
+      if (type === "error") icon = "circle-x";
+      if (type === "warning") icon = "triangle-alert";
+
+      iconBox.className = `modal-icon ${type}`;
+      iconBox.innerHTML = `<i data-lucide="${icon}"></i>`;
+
+      titleBox.textContent = title;
+      messageBox.textContent = message;
+
+      overlay.classList.remove("hidden");
+      lucide.createIcons();
+    }
+
+    function closeModal() {
+      $("modalOverlay").classList.add("hidden");
+      $("pinInput").focus();
+    }
+
     async function login() {
       const pin = $("pinInput").value.trim();
 
       if (!pin) {
-        alert("Ingresa el PIN.");
+        showModal("warning", "PIN requerido", "Ingresa tu PIN para continuar.");
         return;
       }
 
-      const res = await fetch("/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ pin })
-      });
+      try {
+        const res = await fetch("/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ pin })
+        });
 
-      const data = await res.json();
+        const data = await res.json();
 
-      if (!data.success) {
-        alert(data.error || "PIN incorrecto");
-        return;
+        if (!data.success) {
+          $("pinInput").value = "";
+          showModal("error", "PIN incorrecto", "El PIN ingresado no es válido. Intenta nuevamente.");
+          return;
+        }
+
+        window.location.href = "/";
+
+      } catch {
+        showModal("error", "Error de conexión", "No se pudo validar el PIN. Revisa que el servidor esté activo.");
       }
-
-      window.location.href = "/";
     }
 
     $("pinInput").addEventListener("keydown", (event) => {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>SR IDEAS | WEB DOWNLOADER</title>
+  <title>SR IDEAS</title>
 
   <link rel="stylesheet" href="/static/style.css" />
   <script src="https://unpkg.com/lucide@latest"></script>
@@ -13,13 +13,20 @@
 <body>
   <main class="app">
     <section class="hero">
-      <div class="badge">
-        <i data-lucide="zap"></i>
-        SR IDEAS
+      <div class="hero-actions">
+        <div class="badge">
+          <i data-lucide="zap"></i>
+          by SR IDEAS
+        </div>
+
+        <button class="logout-btn" onclick="logout()">
+          <i data-lucide="power"></i>
+          Cerrar sesión
+        </button>
       </div>
 
-      <h1>YT Downloader</h1>
-      <p>Descarga videos y audio de YouTube.</p>
+      <h1>MediaDrop</h1>
+      <p>Descarga videos y audio de YouTube, TikTok y más.</p>
     </section>
 
     <section class="panel">
@@ -34,6 +41,18 @@
 
       <div id="autoInfoStatus" class="auto-info-status">
         Esperando enlace...
+      </div>
+
+      <div class="queue-actions">
+        <button id="addQueueBtn" class="queue-btn" onclick="addCurrentToQueue()" disabled>
+          <i data-lucide="plus"></i>
+          Agregar a cola
+        </button>
+
+        <button id="startQueueBtn" class="queue-btn queue-primary" onclick="startQueue()" disabled>
+          <i data-lucide="list-start"></i>
+          Descargar cola
+        </button>
       </div>
     </section>
 
@@ -157,6 +176,21 @@
         <i data-lucide="trash"></i>
         Limpiar historial
       </button>
+    </section>
+
+    <section id="queuePanel" class="panel hidden">
+      <label>Cola de descargas</label>
+
+      <div id="queueList" class="queue-list"></div>
+
+      <div class="queue-footer">
+        <span id="queueCount">0 enlaces en cola</span>
+
+        <button onclick="clearQueue()" class="queue-clear-btn">
+          <i data-lucide="trash"></i>
+          Limpiar cola
+        </button>
+      </div>
     </section>
 
     <button id="downloadBtn" class="download" onclick="startDownload()" disabled>

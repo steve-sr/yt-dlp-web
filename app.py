@@ -29,7 +29,7 @@ HISTORY_FILE = os.path.join(DATA_DIR, "history.json")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-APP_PIN = os.environ.get("MEDIADROP_PIN", "1234")
+APP_PIN = os.environ.get("MEDIADROP_PIN", "090108")
 
 jobs = {}
 
@@ -556,6 +556,61 @@ def start_download():
 
     return jsonify({"job_id": job_id})
 
+@app.route("/start-queue", methods=["POST"])
+def start_queue():
+    if not session.get("authenticated"):
+        return jsonify({"error": "No autorizado"}), 401
+
+    data = request.json or {}
+    items = data.get("items", [])
+
+    if not items:
+        return jsonify({"error": "No hay enlaces en la cola"}), 400
+
+    queue_id = str(uuid.uuid4())
+    queue_jobs = []
+
+    for item in items:
+        url = item.get("url", "").strip()
+        download_type = item.get("type", "video")
+        quality = item.get("quality", "best")
+        title = item.get("title", "")
+
+        if not url:
+            continue
+
+        job_id = str(uuid.uuid4())
+
+        jobs[job_id] = {
+            "status": "queued",
+            "progress": 0,
+            "message": "En cola...",
+            "filename": None,
+            "speed": "",
+            "eta": "",
+            "title": title,
+            "type": download_type,
+            "url": url,
+            "queue_id": queue_id,
+        }
+
+        queue_jobs.append({
+            "job_id": job_id,
+            "url": url,
+            "type": download_type,
+            "quality": quality,
+            "title": title,
+        })
+
+    if not queue_jobs:
+        return jsonify({"error": "No hay enlaces válidos"}), 400
+
+    socketio.start_background_task(process_queue, queue_id, queue_jobs)
+
+    return jsonify({
+        "queue_id": queue_id,
+        "jobs": queue_jobs
+    })
 
 @app.route("/download/<job_id>")
 def download_file(job_id):
@@ -617,6 +672,28 @@ def server_status():
         "downloads_count": len(os.listdir(DOWNLOAD_DIR)),
     })
 
+def process_queue(queue_id, queue_jobs):
+    for index, item in enumerate(queue_jobs, start=1):
+        job_id = item["job_id"]
+
+        emit_progress(job_id, {
+            "status": "starting",
+            "progress": 0,
+            "message": f"Descarga {index} de {len(queue_jobs)} iniciando...",
+        })
+
+        download_task(
+            job_id,
+            item["url"],
+            item["type"],
+            item["quality"],
+            item.get("title", "")
+        )
+
+    socketio.emit("queue_done", {
+        "queue_id": queue_id,
+        "message": "Cola finalizada"
+    })
 
 def download_task(job_id, url, download_type, quality, title=""):
     try:

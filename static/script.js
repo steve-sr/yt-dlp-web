@@ -5,6 +5,8 @@ let currentJob = null;
 let currentVideoTitle = "";
 let currentInfo = null;
 let debounceTimer = null;
+let downloadQueue = [];
+let activeQueueJobs = {};
 
 const $ = (id) => document.getElementById(id);
 
@@ -55,6 +57,205 @@ function setAutoStatus(type, text) {
   status.textContent = text;
 }
 
+function enableQueueButton() {
+  const btn = $("addQueueBtn");
+
+  if (!btn) return;
+
+  btn.disabled = !currentInfo || !selectedType;
+}
+
+function updateQueueButtons() {
+  $("startQueueBtn").disabled = downloadQueue.length === 0;
+}
+
+function addCurrentToQueue() {
+  const url = $("url").value.trim();
+
+  if (!currentInfo || !selectedType || !url) {
+    showModal("warning", "Faltan datos", "Primero pega un enlace válido.");
+    return;
+  }
+
+  const quality = $("quality").value || "best";
+
+  const item = {
+    id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    url,
+    title: currentVideoTitle || currentInfo.title || "Sin título",
+    type: selectedType,
+    quality,
+    platform: currentInfo.platform_label || "Video",
+    status: "pending",
+    progress: 0,
+    job_id: null,
+  };
+
+  downloadQueue.push(item);
+
+  renderQueue();
+  updateQueueButtons();
+
+  showModal("success", "Agregado a cola", "El enlace fue agregado a la cola de descargas.");
+}
+
+function renderQueue() {
+  const panel = $("queuePanel");
+  const list = $("queueList");
+  const count = $("queueCount");
+
+  if (!downloadQueue.length) {
+    panel.classList.add("hidden");
+    list.innerHTML = "";
+    count.textContent = "0 enlaces en cola";
+    return;
+  }
+
+  panel.classList.remove("hidden");
+
+  count.textContent = `${downloadQueue.length} enlace${downloadQueue.length === 1 ? "" : "s"} en cola`;
+
+  list.innerHTML = "";
+
+  downloadQueue.forEach((item) => {
+    const div = document.createElement("div");
+    div.className = "queue-item";
+    div.id = `queue-${item.id}`;
+
+    div.innerHTML = `
+      <div>
+        <strong>${escapeHtml(item.title)}</strong>
+        <span>${escapeHtml(item.platform)} · ${escapeHtml(item.type)} · Calidad: ${escapeHtml(item.quality)}</span>
+        <div class="queue-status">
+          <div class="queue-status-fill" style="width:${item.progress || 0}%"></div>
+        </div>
+        <span class="queue-message">${escapeHtml(item.status || "Pendiente")}</span>
+      </div>
+
+      <button class="queue-remove" onclick="removeQueueItem('${item.id}')">
+        <i data-lucide="x"></i>
+      </button>
+    `;
+
+    list.appendChild(div);
+  });
+
+  lucide.createIcons();
+}
+
+function removeQueueItem(id) {
+  downloadQueue = downloadQueue.filter((item) => item.id !== id);
+  renderQueue();
+  updateQueueButtons();
+}
+
+function clearQueue() {
+  downloadQueue = [];
+  activeQueueJobs = {};
+  renderQueue();
+  updateQueueButtons();
+}
+
+async function startQueue() {
+  if (!downloadQueue.length) {
+    showModal("warning", "Cola vacía", "Agrega enlaces antes de iniciar la cola.");
+    return;
+  }
+
+  const items = downloadQueue.map((item) => ({
+    url: item.url,
+    type: item.type,
+    quality: item.quality,
+    title: item.title,
+    local_id: item.id,
+  }));
+
+  $("startQueueBtn").disabled = true;
+  $("addQueueBtn").disabled = true;
+
+  try {
+    const res = await fetch("/start-queue", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ items }),
+    });
+
+    const data = await res.json();
+
+    if (data.error) {
+      showModal("error", "No se pudo iniciar la cola", data.error);
+      $("startQueueBtn").disabled = false;
+      enableQueueButton();
+      return;
+    }
+
+    data.jobs.forEach((job, index) => {
+      const localItem = downloadQueue[index];
+
+      if (!localItem) return;
+
+      localItem.job_id = job.job_id;
+      localItem.status = "En cola...";
+      localItem.progress = 0;
+
+      activeQueueJobs[job.job_id] = localItem.id;
+    });
+
+    renderQueue();
+
+  } catch {
+    showModal("error", "Error", "No se pudo iniciar la cola.");
+    $("startQueueBtn").disabled = false;
+    enableQueueButton();
+  }
+}
+
+function updateQueueProgress(data) {
+  const localId = activeQueueJobs[data.job_id];
+
+  if (!localId) return false;
+
+  const item = downloadQueue.find((queueItem) => queueItem.id === localId);
+
+  if (!item) return false;
+
+  item.progress = data.progress || 0;
+  item.status = data.message || data.status || "Procesando...";
+
+  const row = document.getElementById(`queue-${item.id}`);
+
+  if (row) {
+    const fill = row.querySelector(".queue-status-fill");
+    const message = row.querySelector(".queue-message");
+
+    if (fill) fill.style.width = `${item.progress}%`;
+    if (message) message.textContent = item.status;
+  }
+
+  if (data.status === "done") {
+    item.status = "Listo";
+    item.progress = 100;
+  }
+
+  if (data.status === "error") {
+    item.status = data.message || "Error";
+    item.progress = 0;
+  }
+
+  return true;
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function resetFlow() {
   currentInfo = null;
   currentVideoTitle = "";
@@ -69,6 +270,7 @@ function resetFlow() {
   disableDownload();
 
   setAutoStatus("", "Esperando enlace...");
+  enableQueueButton();
 }
 
 function disableTypeButtons() {
@@ -106,6 +308,7 @@ function enableAllowedTypes(allowedTypes, defaultType) {
 
   updateQualityMode();
   enableDownload();
+  enableQueueButton();
 }
 
 function resetQualityOptions() {
@@ -416,6 +619,10 @@ async function startDownload() {
 }
 
 socket.on("progress", (data) => {
+  if (updateQueueProgress(data)) {
+    return;
+  }
+
   if (!currentJob || data.job_id !== currentJob) return;
 
   setProgress(
@@ -435,6 +642,12 @@ socket.on("progress", (data) => {
     showModal("error", "Error durante la descarga", data.message || "Ocurrió un error inesperado.");
     resetButton();
   }
+});
+
+socket.on("queue_done", () => {
+  showModal("success", "Cola finalizada", "Todas las descargas de la cola terminaron.");
+  $("startQueueBtn").disabled = false;
+  enableQueueButton();
 });
 
 function setProgress(percent, message, speed, eta) {
@@ -474,6 +687,14 @@ function resetButton() {
 
   enableDownload();
   lucide.createIcons();
+}
+
+async function logout() {
+  await fetch("/logout", {
+    method: "POST",
+  });
+
+  window.location.href = "/";
 }
 
 async function loadStatus() {
