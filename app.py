@@ -4,13 +4,12 @@ eventlet.monkey_patch()
 import os
 import re
 import uuid
-import shutil
 import yt_dlp
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_socketio import SocketIO
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "yt-dlp-web-secret"
+app.config["SECRET_KEY"] = "yt-dlp-local-secret"
 
 socketio = SocketIO(
     app,
@@ -22,17 +21,6 @@ DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 jobs = {}
-
-
-def get_cookie_file():
-    secret_cookie = "/etc/secrets/cookies.txt"
-    temp_cookie = "/tmp/cookies.txt"
-
-    if os.path.exists(secret_cookie):
-        shutil.copyfile(secret_cookie, temp_cookie)
-        return temp_cookie
-
-    return None
 
 
 def seconds_to_time(seconds):
@@ -63,21 +51,11 @@ def clean_text(value):
 def clean_error(error):
     msg = str(error)
 
-    if "Sign in to confirm" in msg or "not a bot" in msg:
-        return (
-            "YouTube está bloqueando el servidor de Render como bot. "
-            "Las cookies pueden ayudar, pero en servidores cloud YouTube a veces bloquea igual. "
-            "Prueba reexportar cookies desde una sesión activa de YouTube o usar un servidor/VPS con IP menos bloqueada."
-        )
-
     if "Requested format is not available" in msg:
-        return (
-            "Ese formato no está disponible para este video desde Render. "
-            "Prueba con MP3 o con otra URL."
-        )
+        return "El formato solicitado no está disponible. Prueba con otra calidad o con MP3."
 
-    if "No se generó ningún archivo" in msg:
-        return "No se generó ningún archivo. Prueba con MP3 u otro video."
+    if "Sign in to confirm" in msg or "not a bot" in msg:
+        return "YouTube está pidiendo verificación. Prueba otro video o actualiza yt-dlp."
 
     return msg
 
@@ -130,36 +108,43 @@ def progress_hook(job_id):
     return hook
 
 
-def base_ydl_opts(cookie_file=None):
-    opts = {
+def base_ydl_opts():
+    return {
         "quiet": True,
         "no_warnings": True,
         "noprogress": False,
         "nopart": False,
-        "no_cookies_update": True,
-
-        # Cliente más compatible para servidores.
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["android", "web"]
-            }
-        },
-
-        # Headers normales para reducir bloqueos simples.
         "http_headers": {
             "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/124.0.0.0 Safari/537.36"
             ),
-            "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
+            "Accept-Language": "es-CR,es;q=0.9,en;q=0.8",
         },
     }
 
-    if cookie_file:
-        opts["cookiefile"] = cookie_file
 
-    return opts
+def get_newest_file(before_files):
+    after_files = set(os.listdir(DOWNLOAD_DIR))
+    new_files = list(after_files - before_files)
+
+    candidates = new_files
+
+    if not candidates:
+        candidates = [
+            f for f in os.listdir(DOWNLOAD_DIR)
+            if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
+        ]
+
+    if not candidates:
+        return None
+
+    return sorted(
+        candidates,
+        key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
+        reverse=True
+    )[0]
 
 
 @app.route("/")
@@ -176,26 +161,14 @@ def get_video_info():
         return jsonify({"error": "URL requerida"}), 400
 
     try:
-        cookie_file = get_cookie_file()
-
-        opts = base_ydl_opts(cookie_file)
+        opts = base_ydl_opts()
         opts.update({
             "skip_download": True,
             "noplaylist": True,
-            "ignore_no_formats_error": True,
         })
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-
-        if not info:
-            return jsonify({
-                "title": "Video detectado",
-                "thumbnail": "",
-                "uploader": "Desconocido",
-                "duration": "Desconocido",
-                "webpage_url": url,
-            })
 
         return jsonify({
             "title": info.get("title", "Sin título"),
@@ -256,34 +229,11 @@ def download_file(job_id):
     )
 
 
-def get_newest_file(before_files):
-    after_files = set(os.listdir(DOWNLOAD_DIR))
-    new_files = list(after_files - before_files)
-
-    candidates = new_files
-
-    if not candidates:
-        candidates = [
-            f for f in os.listdir(DOWNLOAD_DIR)
-            if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
-        ]
-
-    if not candidates:
-        return None
-
-    return sorted(
-        candidates,
-        key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
-        reverse=True
-    )[0]
-
-
 def download_task(job_id, url, download_type, quality):
     try:
         before_files = set(os.listdir(DOWNLOAD_DIR))
-        cookie_file = get_cookie_file()
 
-        ydl_opts = base_ydl_opts(cookie_file)
+        ydl_opts = base_ydl_opts()
         ydl_opts.update({
             "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).160s.%(ext)s"),
             "progress_hooks": [progress_hook(job_id)],
@@ -302,11 +252,18 @@ def download_task(job_id, url, download_type, quality):
             })
 
         else:
-            # MÁXIMA ESTABILIDAD:
-            # No forzar calidad. Que yt-dlp escoja lo que sí existe.
-            # Esto evita "Requested format is not available".
+            if quality == "1080p":
+                fmt = "bv*[height<=1080]+ba/b[height<=1080]/best[height<=1080]/best"
+            elif quality == "720p":
+                fmt = "bv*[height<=720]+ba/b[height<=720]/best[height<=720]/best"
+            elif quality == "480p":
+                fmt = "bv*[height<=480]+ba/b[height<=480]/best[height<=480]/best"
+            else:
+                fmt = "bv*+ba/best"
+
             ydl_opts.update({
-                "format": "best",
+                "format": fmt,
+                "merge_output_format": "mp4",
             })
 
         emit_progress(job_id, {
@@ -339,7 +296,13 @@ def download_task(job_id, url, download_type, quality):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 5050))
+
+    print("")
+    print("Servidor iniciado correctamente")
+    print(f"Abre en tu Mac: http://127.0.0.1:{port}")
+    print(f"Para celular usa: http://IP-DE-TU-MAC:{port}")
+    print("")
 
     socketio.run(
         app,
