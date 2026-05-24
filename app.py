@@ -227,17 +227,18 @@ def download_task(job_id, url, download_type, quality):
 
         else:
             if quality == "1080p":
-                fmt = "bv*[height<=1080]+ba/b[height<=1080]"
+                fmt = "bv*[height<=1080]+ba/best[height<=1080]/best"
             elif quality == "720p":
-                fmt = "bv*[height<=720]+ba/b[height<=720]"
+                fmt = "bv*[height<=720]+ba/best[height<=720]/best"
             elif quality == "480p":
-                fmt = "bv*[height<=480]+ba/b[height<=480]"
+                fmt = "bv*[height<=480]+ba/best[height<=480]/best"
             else:
-                fmt = "bv*+ba/b"
+                fmt = "bv*+ba/best"
 
             ydl_opts.update({
                 "format": fmt,
                 "merge_output_format": "mp4",
+                "format_sort": ["res", "ext:mp4:m4a"],
             })
 
         emit_progress(job_id, {
