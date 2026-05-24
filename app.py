@@ -210,77 +210,32 @@ def download_task(job_id, url, download_type, quality):
         before_files = set(os.listdir(DOWNLOAD_DIR))
         cookie_file = get_cookie_file()
 
-        ydl_opts = {
+        ydl_opts = base_ydl_opts(cookie_file)
+        ydl_opts.update({
             "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).160s.%(ext)s"),
             "progress_hooks": [progress_hook(job_id)],
             "noplaylist": download_type != "playlist",
-            "quiet": True,
-            "no_warnings": True,
-            "noprogress": False,
-            "nopart": False,
-            "ignoreerrors": True,
-        }
-
-        if cookie_file:
-            ydl_opts["cookiefile"] = cookie_file
-
-        # =========================
-        # MP3
-        # =========================
+            "ignoreerrors": False,
+        })
 
         if download_type == "mp3":
-
             ydl_opts.update({
-                "format": "bestaudio",
+                "format": "bestaudio/best",
                 "postprocessors": [{
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
                     "preferredquality": "320",
                 }],
             })
-
-        # =========================
-        # VIDEO
-        # =========================
-
         else:
-
-            # FORMATO ULTRA COMPATIBLE
-            # evita "Requested format is not available"
-
             if quality == "1080p":
-
-                fmt = (
-                    "bestvideo[height<=1080]"
-                    "+bestaudio/"
-                    "best[height<=1080]/"
-                    "best"
-                )
-
+                fmt = "best[height<=1080]/best"
             elif quality == "720p":
-
-                fmt = (
-                    "bestvideo[height<=720]"
-                    "+bestaudio/"
-                    "best[height<=720]/"
-                    "best"
-                )
-
+                fmt = "best[height<=720]/best"
             elif quality == "480p":
-
-                fmt = (
-                    "bestvideo[height<=480]"
-                    "+bestaudio/"
-                    "best[height<=480]/"
-                    "best"
-                )
-
+                fmt = "best[height<=480]/best"
             else:
-
-                fmt = (
-                    "bestvideo+bestaudio/"
-                    "best"
-                )
+                fmt = "best"
 
             ydl_opts.update({
                 "format": fmt,
@@ -300,24 +255,13 @@ def download_task(job_id, url, download_type, quality):
         new_files = list(after_files - before_files)
 
         if new_files:
-
             filename = sorted(
                 new_files,
-                key=lambda f: os.path.getmtime(
-                    os.path.join(DOWNLOAD_DIR, f)
-                ),
+                key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
                 reverse=True
             )[0]
-
         else:
-
-            filename = sorted(
-                os.listdir(DOWNLOAD_DIR),
-                key=lambda f: os.path.getmtime(
-                    os.path.join(DOWNLOAD_DIR, f)
-                ),
-                reverse=True
-            )[0]
+            raise Exception("No se generó ningún archivo. Prueba con otra calidad o con MP3.")
 
         emit_progress(job_id, {
             "status": "done",
@@ -327,9 +271,9 @@ def download_task(job_id, url, download_type, quality):
         })
 
     except Exception as e:
-
         emit_progress(job_id, {
             "status": "error",
+            "progress": 0,
             "message": f"ERROR: {str(e)}",
         })
 
