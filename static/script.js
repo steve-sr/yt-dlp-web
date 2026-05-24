@@ -119,20 +119,69 @@ function renderQueue() {
 
   downloadQueue.forEach((item) => {
     const div = document.createElement("div");
-    div.className = "queue-item";
+
+    const isReady = item.status === "Listo" && item.job_id;
+    const isError = String(item.status || "").toLowerCase().includes("error");
+    const isWorking = !isReady && !isError && item.progress > 0;
+
+    div.className = `
+      queue-item
+      ${isReady ? "queue-item-ready" : ""}
+      ${isError ? "queue-item-error" : ""}
+      ${isWorking ? "queue-item-working" : ""}
+    `;
+
     div.id = `queue-${item.id}`;
 
+    const statusLabel = isReady
+      ? "Listo"
+      : isError
+        ? "Error"
+        : item.status || "Pendiente";
+
     div.innerHTML = `
-      <div>
-        <strong>${escapeHtml(item.title)}</strong>
-        <span>${escapeHtml(item.platform)} · ${escapeHtml(item.type)} · Calidad: ${escapeHtml(item.quality)}</span>
+      <div class="queue-main">
+        <div class="queue-top">
+          <div>
+            <strong>${escapeHtml(item.title)}</strong>
+            <span class="queue-meta">
+              ${escapeHtml(item.platform)} · ${escapeHtml(item.type)} · Calidad: ${escapeHtml(item.quality)}
+            </span>
+          </div>
+
+          <span class="queue-badge ${isReady ? "ready" : ""} ${isError ? "error" : ""}">
+            ${escapeHtml(statusLabel)}
+          </span>
+        </div>
+
         <div class="queue-status">
           <div class="queue-status-fill" style="width:${item.progress || 0}%"></div>
         </div>
-        <span class="queue-message">${escapeHtml(item.status || "Pendiente")}</span>
+
+        ${
+          isReady
+            ? `
+              <div class="queue-ready-row">
+                <span class="queue-ready-text">
+                  <i data-lucide="check-circle"></i>
+                  Archivo preparado
+                </span>
+
+                <a class="queue-download-link" href="/download/${item.job_id}">
+                  <i data-lucide="download"></i>
+                  Descargar
+                </a>
+              </div>
+            `
+            : `
+              <div class="queue-message-row">
+                <span class="queue-message">${escapeHtml(item.status || "Pendiente")}</span>
+              </div>
+            `
+        }
       </div>
 
-      <button class="queue-remove" onclick="removeQueueItem('${item.id}')">
+      <button class="queue-remove" onclick="removeQueueItem('${item.id}')" title="Quitar">
         <i data-lucide="x"></i>
       </button>
     `;
@@ -172,6 +221,14 @@ async function startQueue() {
 
   $("startQueueBtn").disabled = true;
   $("addQueueBtn").disabled = true;
+
+  downloadQueue.forEach((item) => {
+    item.status = "Enviando a cola...";
+    item.progress = 0;
+    item.job_id = null;
+  });
+
+  renderQueue();
 
   try {
     const res = await fetch("/start-queue", {
@@ -222,27 +279,19 @@ function updateQueueProgress(data) {
   if (!item) return false;
 
   item.progress = data.progress || 0;
-  item.status = data.message || data.status || "Procesando...";
-
-  const row = document.getElementById(`queue-${item.id}`);
-
-  if (row) {
-    const fill = row.querySelector(".queue-status-fill");
-    const message = row.querySelector(".queue-message");
-
-    if (fill) fill.style.width = `${item.progress}%`;
-    if (message) message.textContent = item.status;
-  }
 
   if (data.status === "done") {
     item.status = "Listo";
     item.progress = 100;
-  }
-
-  if (data.status === "error") {
+    item.filename = data.filename || "";
+  } else if (data.status === "error") {
     item.status = data.message || "Error";
     item.progress = 0;
+  } else {
+    item.status = data.message || data.status || "Procesando...";
   }
+
+  renderQueue();
 
   return true;
 }

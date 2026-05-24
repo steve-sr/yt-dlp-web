@@ -5,15 +5,16 @@ import os
 import re
 import uuid
 import json
-import shutil
 import subprocess
 from datetime import datetime
+
 import yt_dlp
 from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect
 from flask_socketio import SocketIO
 
+
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "yt-dlp-local-secret"
+app.config["SECRET_KEY"] = "sr-mediadrop-local-secret"
 
 socketio = SocketIO(
     app,
@@ -29,10 +30,14 @@ HISTORY_FILE = os.path.join(DATA_DIR, "history.json")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
-APP_PIN = os.environ.get("MEDIADROP_PIN", "090108")
+APP_PIN = os.environ.get("MEDIADROP_PIN", "1234")
 
 jobs = {}
 
+
+# ==========================================================
+# GENERAL HELPERS
+# ==========================================================
 
 def load_history():
     if not os.path.exists(HISTORY_FILE):
@@ -53,12 +58,17 @@ def save_history(history):
 def add_history(item):
     history = load_history()
     history.insert(0, item)
-    history = history[:50]
+    history = history[:80]
     save_history(history)
 
 
 def seconds_to_time(seconds):
     if not seconds:
+        return "Desconocido"
+
+    try:
+        seconds = int(seconds)
+    except Exception:
         return "Desconocido"
 
     minutes = seconds // 60
@@ -89,12 +99,21 @@ def clean_error(error):
         return "El formato solicitado no está disponible. Prueba otra calidad o MP3."
 
     if "Sign in to confirm" in msg or "not a bot" in msg:
-        return "YouTube pidió verificación. Como estás local, prueba actualizar yt-dlp o usar otro video."
+        return "YouTube pidió verificación. Prueba actualizar yt-dlp o usar otro video."
+
+    if "HTTP Error 429" in msg or "Too Many Requests" in msg:
+        return "La plataforma limitó temporalmente las solicitudes. Espera unos minutos e intenta otra vez."
+
+    if "Unsupported URL" in msg:
+        return "Ese enlace no es compatible."
 
     return msg
 
 
 def emit_progress(job_id, payload):
+    if job_id not in jobs:
+        return
+
     jobs[job_id].update(payload)
 
     socketio.emit("progress", {
@@ -103,6 +122,82 @@ def emit_progress(job_id, payload):
     })
 
     socketio.sleep(0)
+
+
+def check_command(command):
+    try:
+        subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True
+        )
+        return True
+    except Exception:
+        return False
+
+
+def get_file_size(filename):
+    path = os.path.join(DOWNLOAD_DIR, filename)
+
+    if not os.path.exists(path):
+        return "Desconocido"
+
+    size = os.path.getsize(path)
+
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+
+    if size < 1024 * 1024 * 1024:
+        return f"{size / (1024 * 1024):.1f} MB"
+
+    return f"{size / (1024 * 1024 * 1024):.1f} GB"
+
+
+def get_newest_file(before_files):
+    after_files = set(os.listdir(DOWNLOAD_DIR))
+    new_files = list(after_files - before_files)
+
+    candidates = [
+        f for f in new_files
+        if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
+    ]
+
+    if not candidates:
+        candidates = [
+            f for f in os.listdir(DOWNLOAD_DIR)
+            if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
+        ]
+
+    if not candidates:
+        return None
+
+    return sorted(
+        candidates,
+        key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
+        reverse=True
+    )[0]
+
+
+# ==========================================================
+# YT-DLP HELPERS
+# ==========================================================
+
+def base_ydl_opts():
+    return {
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": False,
+        "nopart": False,
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "es-CR,es;q=0.9,en;q=0.8",
+        },
+    }
 
 
 def progress_hook(job_id):
@@ -117,6 +212,7 @@ def progress_hook(job_id):
                 percent = (downloaded / total) * 100
             else:
                 raw_percent = clean_text(d.get("_percent_str", "0")).replace("%", "")
+
                 try:
                     percent = float(raw_percent)
                 except Exception:
@@ -142,169 +238,73 @@ def progress_hook(job_id):
     return hook
 
 
-def base_ydl_opts():
-    return {
-        "quiet": True,
-        "no_warnings": True,
-        "noprogress": False,
-        "nopart": False,
-        "http_headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "es-CR,es;q=0.9,en;q=0.8",
-        },
-    }
+def extract_available_qualities(info):
+    formats = info.get("formats", [])
+    qualities = {}
 
+    for fmt in formats:
+        height = fmt.get("height")
+        vcodec = fmt.get("vcodec")
 
-def get_newest_file(before_files):
-    after_files = set(os.listdir(DOWNLOAD_DIR))
-    new_files = list(after_files - before_files)
+        if not height:
+            continue
 
-    candidates = new_files
+        if vcodec == "none":
+            continue
 
-    if not candidates:
-        candidates = [
-            f for f in os.listdir(DOWNLOAD_DIR)
-            if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
-        ]
+        if height < 144:
+            continue
 
-    if not candidates:
-        return None
+        label = f"{height}p"
+
+        if label not in qualities:
+            qualities[label] = {
+                "label": label,
+                "value": str(height),
+                "height": height,
+            }
 
     return sorted(
-        candidates,
-        key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
+        qualities.values(),
+        key=lambda item: item["height"],
+        reverse=True
+    )
+
+
+def get_best_thumbnail(info):
+    thumbnail = info.get("thumbnail")
+
+    if thumbnail:
+        return thumbnail
+
+    thumbnails = info.get("thumbnails", [])
+
+    if not thumbnails:
+        return ""
+
+    valid_thumbnails = []
+
+    for item in thumbnails:
+        url = item.get("url")
+        width = item.get("width") or 0
+        height = item.get("height") or 0
+
+        if url:
+            valid_thumbnails.append({
+                "url": url,
+                "score": width * height
+            })
+
+    if not valid_thumbnails:
+        return ""
+
+    best = sorted(
+        valid_thumbnails,
+        key=lambda item: item["score"],
         reverse=True
     )[0]
 
-
-def get_file_size(filename):
-    path = os.path.join(DOWNLOAD_DIR, filename)
-
-    if not os.path.exists(path):
-        return "Desconocido"
-
-    size = os.path.getsize(path)
-
-    if size < 1024 * 1024:
-        return f"{size / 1024:.1f} KB"
-
-    if size < 1024 * 1024 * 1024:
-        return f"{size / (1024 * 1024):.1f} MB"
-
-    return f"{size / (1024 * 1024 * 1024):.1f} GB"
-
-
-def check_command(command):
-    try:
-        subprocess.run(
-            command,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=True
-        )
-        return True
-    except Exception:
-        return False
-
-
-@app.route("/")
-def index():
-    if not session.get("authenticated"):
-        return render_template("login.html")
-
-    return render_template("index.html")
-
-
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.json or {}
-    pin = data.get("pin", "")
-
-    if pin == APP_PIN:
-        session["authenticated"] = True
-        return jsonify({"success": True})
-
-    return jsonify({"success": False, "error": "PIN incorrecto"}), 401
-
-
-@app.route("/logout", methods=["POST"])
-def logout():
-    session.clear()
-    return jsonify({"success": True})
-
-def extract_available_qualities(info):
-    formats = info.get("formats", [])
-    qualities = {}
-
-    for fmt in formats:
-        height = fmt.get("height")
-        ext = fmt.get("ext")
-        vcodec = fmt.get("vcodec")
-
-        if not height:
-            continue
-
-        if vcodec == "none":
-            continue
-
-        if height < 144:
-            continue
-
-        label = f"{height}p"
-
-        if label not in qualities:
-            qualities[label] = {
-                "label": label,
-                "value": str(height),
-                "height": height,
-                "ext": ext or "desconocido"
-            }
-
-    result = sorted(
-        qualities.values(),
-        key=lambda item: item["height"],
-        reverse=True
-    )
-
-    return result
-
-def extract_available_qualities(info):
-    formats = info.get("formats", [])
-    qualities = {}
-
-    for fmt in formats:
-        height = fmt.get("height")
-        vcodec = fmt.get("vcodec")
-
-        if not height:
-            continue
-
-        if vcodec == "none":
-            continue
-
-        if height < 144:
-            continue
-
-        label = f"{height}p"
-
-        if label not in qualities:
-            qualities[label] = {
-                "label": label,
-                "value": str(height),
-                "height": height,
-            }
-
-    result = sorted(
-        qualities.values(),
-        key=lambda item: item["height"],
-        reverse=True
-    )
-
-    return result
+    return best["url"]
 
 
 def classify_link(url, info):
@@ -329,8 +329,8 @@ def classify_link(url, info):
             "platform": "youtube",
             "platform_label": "YouTube Playlist",
             "platform_icon": "list-video",
-            "allowed_types": ["playlist"],
-            "default_type": "playlist",
+            "allowed_types": ["video", "mp3"],
+            "default_type": "video",
             "label": "Playlist detectada"
         }
 
@@ -398,40 +398,7 @@ def classify_link(url, info):
         "default_type": "video",
         "label": "Video detectado"
     }
-def get_best_thumbnail(info):
-    thumbnail = info.get("thumbnail")
 
-    if thumbnail:
-        return thumbnail
-
-    thumbnails = info.get("thumbnails", [])
-
-    if not thumbnails:
-        return ""
-
-    valid_thumbnails = []
-
-    for item in thumbnails:
-        url = item.get("url")
-        width = item.get("width") or 0
-        height = item.get("height") or 0
-
-        if url:
-            valid_thumbnails.append({
-                "url": url,
-                "score": width * height
-            })
-
-    if not valid_thumbnails:
-        return ""
-
-    best = sorted(
-        valid_thumbnails,
-        key=lambda item: item["score"],
-        reverse=True
-    )[0]
-
-    return best["url"]
 
 def quick_classify_url(url):
     url_lower = url.lower()
@@ -474,6 +441,89 @@ def quick_classify_url(url):
 
     return None
 
+
+def build_ydl_options(job_id, download_type, quality):
+    ydl_opts = base_ydl_opts()
+
+    ydl_opts.update({
+        "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).160s.%(ext)s"),
+        "progress_hooks": [progress_hook(job_id)],
+        "noplaylist": True,
+        "ignoreerrors": False,
+    })
+
+    if download_type == "mp3":
+        audio_quality = quality if quality in ["320", "192", "128"] else "320"
+
+        ydl_opts.update({
+            "format": "bestaudio/best",
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": audio_quality,
+            }],
+        })
+
+    elif download_type == "reels":
+        ydl_opts.update({
+            "format": "best",
+        })
+
+    else:
+        if quality and quality != "best":
+            try:
+                height = int(quality)
+                fmt = f"bv*[height<={height}]+ba/b[height<={height}]/best[height<={height}]/best"
+            except ValueError:
+                fmt = "bv*+ba/best"
+        else:
+            fmt = "bv*+ba/best"
+
+        ydl_opts.update({
+            "format": fmt,
+            "merge_output_format": "mp4",
+        })
+
+    return ydl_opts
+
+
+# ==========================================================
+# ROUTES: AUTH
+# ==========================================================
+
+@app.route("/")
+def index():
+    if not session.get("authenticated"):
+        return render_template("login.html")
+
+    return render_template("index.html")
+
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.json or {}
+    pin = data.get("pin", "")
+
+    if pin == APP_PIN:
+        session["authenticated"] = True
+        return jsonify({"success": True})
+
+    return jsonify({
+        "success": False,
+        "error": "PIN incorrecto"
+    }), 401
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    return jsonify({"success": True})
+
+
+# ==========================================================
+# ROUTES: INFO + DOWNLOAD
+# ==========================================================
+
 @app.route("/info", methods=["POST"])
 def get_video_info():
     if not session.get("authenticated"):
@@ -487,14 +537,14 @@ def get_video_info():
 
     try:
         quick_info = quick_classify_url(url)
+
         if quick_info:
             return jsonify(quick_info)
-        
+
         opts = base_ydl_opts()
         opts.update({
             "skip_download": True,
-            "noplaylist": False,
-            "extract_flat": False,
+            "noplaylist": True,
         })
 
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -515,6 +565,7 @@ def get_video_info():
 
     except Exception as e:
         return jsonify({"error": clean_error(e)}), 500
+
 
 @app.route("/start", methods=["POST"])
 def start_download():
@@ -538,6 +589,7 @@ def start_download():
         "progress": 0,
         "message": "Preparando descarga...",
         "filename": None,
+        "file_size": "",
         "speed": "",
         "eta": "",
         "title": title,
@@ -555,6 +607,7 @@ def start_download():
     )
 
     return jsonify({"job_id": job_id})
+
 
 @app.route("/start-queue", methods=["POST"])
 def start_queue():
@@ -586,6 +639,7 @@ def start_queue():
             "progress": 0,
             "message": "En cola...",
             "filename": None,
+            "file_size": "",
             "speed": "",
             "eta": "",
             "title": title,
@@ -612,6 +666,7 @@ def start_queue():
         "jobs": queue_jobs
     })
 
+
 @app.route("/download/<job_id>")
 def download_file(job_id):
     if not session.get("authenticated"):
@@ -628,6 +683,10 @@ def download_file(job_id):
         as_attachment=True
     )
 
+
+# ==========================================================
+# ROUTES: HISTORY + STATUS
+# ==========================================================
 
 @app.route("/history")
 def history():
@@ -669,17 +728,27 @@ def server_status():
         "yt_dlp": check_command(["yt-dlp", "--version"]),
         "ffmpeg": check_command(["ffmpeg", "-version"]),
         "downloads_folder": os.path.exists(DOWNLOAD_DIR),
-        "downloads_count": len(os.listdir(DOWNLOAD_DIR)),
+        "downloads_count": len([
+            f for f in os.listdir(DOWNLOAD_DIR)
+            if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
+        ]),
     })
 
+
+# ==========================================================
+# BACKGROUND TASKS
+# ==========================================================
+
 def process_queue(queue_id, queue_jobs):
+    total = len(queue_jobs)
+
     for index, item in enumerate(queue_jobs, start=1):
         job_id = item["job_id"]
 
         emit_progress(job_id, {
             "status": "starting",
             "progress": 0,
-            "message": f"Descarga {index} de {len(queue_jobs)} iniciando...",
+            "message": f"Descarga {index} de {total} iniciando...",
         })
 
         download_task(
@@ -690,49 +759,19 @@ def process_queue(queue_id, queue_jobs):
             item.get("title", "")
         )
 
+        socketio.sleep(0.5)
+
     socketio.emit("queue_done", {
         "queue_id": queue_id,
         "message": "Cola finalizada"
     })
 
+
 def download_task(job_id, url, download_type, quality, title=""):
     try:
         before_files = set(os.listdir(DOWNLOAD_DIR))
 
-        ydl_opts = base_ydl_opts()
-        ydl_opts.update({
-            "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).160s.%(ext)s"),
-            "progress_hooks": [progress_hook(job_id)],
-            "noplaylist": download_type != "playlist",
-            "ignoreerrors": False,
-        })
-
-        if download_type == "mp3":
-            audio_quality = quality if quality in ["320", "192", "128"] else "320"
-
-            ydl_opts.update({
-                "format": "bestaudio/best",
-                "postprocessors": [{
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": audio_quality,
-                }],
-            })
-
-        else:
-            if quality and quality != "best":
-                try:
-                    height = int(quality)
-                    fmt = f"bv*[height<={height}]+ba/b[height<={height}]/best[height<={height}]/best"
-                except ValueError:
-                    fmt = "bv*+ba/best"
-            else:
-                fmt = "bv*+ba/best"
-
-            ydl_opts.update({
-                "format": fmt,
-                "merge_output_format": "mp4",
-            })
+        ydl_opts = build_ydl_options(job_id, download_type, quality)
 
         emit_progress(job_id, {
             "status": "starting",
@@ -749,6 +788,9 @@ def download_task(job_id, url, download_type, quality, title=""):
             raise Exception("No se generó ningún archivo.")
 
         file_size = get_file_size(filename)
+
+        jobs[job_id]["filename"] = filename
+        jobs[job_id]["file_size"] = file_size
 
         add_history({
             "title": title or filename,
@@ -775,6 +817,10 @@ def download_task(job_id, url, download_type, quality, title=""):
             "message": f"ERROR: {clean_error(e)}",
         })
 
+
+# ==========================================================
+# APP START
+# ==========================================================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5050))
