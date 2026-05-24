@@ -60,6 +60,28 @@ def clean_text(value):
     return value.strip()
 
 
+def clean_error(error):
+    msg = str(error)
+
+    if "Sign in to confirm" in msg or "not a bot" in msg:
+        return (
+            "YouTube está bloqueando el servidor de Render como bot. "
+            "Las cookies pueden ayudar, pero en servidores cloud YouTube a veces bloquea igual. "
+            "Prueba reexportar cookies desde una sesión activa de YouTube o usar un servidor/VPS con IP menos bloqueada."
+        )
+
+    if "Requested format is not available" in msg:
+        return (
+            "Ese formato no está disponible para este video desde Render. "
+            "Prueba con MP3 o con otra URL."
+        )
+
+    if "No se generó ningún archivo" in msg:
+        return "No se generó ningún archivo. Prueba con MP3 u otro video."
+
+    return msg
+
+
 def emit_progress(job_id, payload):
     jobs[job_id].update(payload)
 
@@ -85,7 +107,7 @@ def progress_hook(job_id):
                 raw_percent = clean_text(d.get("_percent_str", "0")).replace("%", "")
                 try:
                     percent = float(raw_percent)
-                except:
+                except Exception:
                     percent = 0
 
             percent = max(0, min(100, percent))
@@ -101,7 +123,7 @@ def progress_hook(job_id):
         elif status == "finished":
             emit_progress(job_id, {
                 "status": "processing",
-                "progress": 100,
+                "progress": 96,
                 "message": "Procesando archivo...",
             })
 
@@ -115,6 +137,23 @@ def base_ydl_opts(cookie_file=None):
         "noprogress": False,
         "nopart": False,
         "no_cookies_update": True,
+
+        # Cliente más compatible para servidores.
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android", "web"]
+            }
+        },
+
+        # Headers normales para reducir bloqueos simples.
+        "http_headers": {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9,es;q=0.8",
+        },
     }
 
     if cookie_file:
@@ -130,7 +169,7 @@ def index():
 
 @app.route("/info", methods=["POST"])
 def get_video_info():
-    data = request.json
+    data = request.json or {}
     url = data.get("url", "").strip()
 
     if not url:
@@ -149,6 +188,15 @@ def get_video_info():
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
 
+        if not info:
+            return jsonify({
+                "title": "Video detectado",
+                "thumbnail": "",
+                "uploader": "Desconocido",
+                "duration": "Desconocido",
+                "webpage_url": url,
+            })
+
         return jsonify({
             "title": info.get("title", "Sin título"),
             "thumbnail": info.get("thumbnail"),
@@ -158,12 +206,12 @@ def get_video_info():
         })
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": clean_error(e)}), 500
 
 
 @app.route("/start", methods=["POST"])
 def start_download():
-    data = request.json
+    data = request.json or {}
 
     url = data.get("url", "").strip()
     download_type = data.get("type", "video")
@@ -208,6 +256,28 @@ def download_file(job_id):
     )
 
 
+def get_newest_file(before_files):
+    after_files = set(os.listdir(DOWNLOAD_DIR))
+    new_files = list(after_files - before_files)
+
+    candidates = new_files
+
+    if not candidates:
+        candidates = [
+            f for f in os.listdir(DOWNLOAD_DIR)
+            if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
+        ]
+
+    if not candidates:
+        return None
+
+    return sorted(
+        candidates,
+        key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
+        reverse=True
+    )[0]
+
+
 def download_task(job_id, url, download_type, quality):
     try:
         before_files = set(os.listdir(DOWNLOAD_DIR))
@@ -232,12 +302,11 @@ def download_task(job_id, url, download_type, quality):
             })
 
         else:
-            # Importante:
-            # No forzamos calidad aquí.
-            # Dejamos que yt-dlp escoja el mejor formato disponible.
+            # MÁXIMA ESTABILIDAD:
+            # No forzar calidad. Que yt-dlp escoja lo que sí existe.
             # Esto evita "Requested format is not available".
             ydl_opts.update({
-                "merge_output_format": "mp4",
+                "format": "best",
             })
 
         emit_progress(job_id, {
@@ -249,30 +318,10 @@ def download_task(job_id, url, download_type, quality):
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        after_files = set(os.listdir(DOWNLOAD_DIR))
-        new_files = list(after_files - before_files)
+        filename = get_newest_file(before_files)
 
-        if not new_files:
-            files = [
-                f for f in os.listdir(DOWNLOAD_DIR)
-                if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
-            ]
-
-            if not files:
-                raise Exception("No se generó ningún archivo.")
-
-            filename = sorted(
-                files,
-                key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
-                reverse=True
-            )[0]
-
-        else:
-            filename = sorted(
-                new_files,
-                key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
-                reverse=True
-            )[0]
+        if not filename:
+            raise Exception("No se generó ningún archivo.")
 
         emit_progress(job_id, {
             "status": "done",
@@ -285,7 +334,7 @@ def download_task(job_id, url, download_type, quality):
         emit_progress(job_id, {
             "status": "error",
             "progress": 0,
-            "message": f"ERROR: {str(e)}",
+            "message": f"ERROR: {clean_error(e)}",
         })
 
 
