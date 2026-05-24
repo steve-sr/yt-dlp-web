@@ -259,4 +259,12 @@ def download_task(job_id, url, download_type, quality):
 
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=10000, debug=True)
+    import os
+
+    port = int(os.environ.get("PORT", 10000))
+
+    socketio.run(
+        app,
+        host="0.0.0.0",
+        port=port
+    )
