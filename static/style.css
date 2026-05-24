@@ -213,7 +213,7 @@ button:hover {
 
 .types {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: 1fr 1fr 2fr;
   gap: 14px;
   margin: 22px 0;
 }
@@ -995,4 +995,28 @@ select:disabled {
     linear-gradient(135deg, rgba(147, 51, 234, 0.25), rgba(56, 189, 248, 0.16)),
     #020617;
   color: #ffffff;
+}
+
+.type-wide {
+  min-width: 0;
+}
+
+@media (max-width: 850px) {
+  .types {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .type-wide {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 520px) {
+  .types {
+    grid-template-columns: 1fr;
+  }
+
+  .type-wide {
+    grid-column: span 1;
+  }
 }

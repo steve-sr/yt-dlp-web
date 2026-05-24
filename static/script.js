@@ -317,10 +317,15 @@ async function loadInfoAutomatically(url) {
 
     $("preview").classList.remove("hidden");
 
-    enableAllowedTypes(
-      data.allowed_types || ["video", "mp3"],
-      data.default_type || "video"
+    const allowed = (data.allowed_types || ["video", "mp3"]).filter(
+      (type) => type !== "playlist"
     );
+
+    const defaultType = data.default_type === "playlist"
+      ? "video"
+      : data.default_type || "video";
+
+    enableAllowedTypes(allowed, defaultType);
 
     setAutoStatus(
       "success",
