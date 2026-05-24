@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YT-DLP Web</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="app">
+    <section class="hero">
+      <h1>Descarga tus videos favoritos</h1>
+      <p>Rápido, sencillo y optimizado para celular.</p>
+    </section>
+
+    <section class="card">
+      <label>Pega la URL aquí</label>
+      <div class="input-row">
+        <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=..." />
+        <button onclick="pasteUrl()">Pegar</button>
+      </div>
+    </section>
+
+    <section class="types">
+      <button class="type active" data-type="video">Video</button>
+      <button class="type" data-type="mp3">MP3</button>
+      <button class="type" data-type="playlist">Playlist</button>
+      <button class="type" data-type="reels">Reels / TikTok</button>
+    </section>
+
+    <section class="card">
+      <label>Calidad</label>
+      <select id="quality">
+        <option value="best">Máxima calidad</option>
+        <option value="1080p">1080p</option>
+        <option value="720p">720p</option>
+        <option value="480p">480p</option>
+      </select>
+    </section>
+
+    <button id="downloadBtn" class="download" onclick="startDownload()">
+      Iniciar descarga
+    </button>
+
+    <section class="progress-box">
+      <div class="progress-bar">
+        <div id="progressFill"></div>
+      </div>
+      <div class="progress-info">
+        <span id="progressText">0%</span>
+        <span id="statusText">Listo para descargar</span>
+      </div>
+    </section>
+
+    <a id="downloadLink" class="download-link" href="#" style="display:none;">
+      Descargar archivo
+    </a>
+  </main>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>

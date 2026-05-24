@@ -1,0 +1,170 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #060816;
+  color: white;
+}
+
+.app {
+  width: min(1100px, 100%);
+  margin: 0 auto;
+  padding: 32px;
+}
+
+.hero h1 {
+  font-size: clamp(32px, 6vw, 54px);
+  margin: 0 0 10px;
+}
+
+.hero p {
+  color: #9ca3af;
+  font-size: 18px;
+  margin-bottom: 32px;
+}
+
+.card {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 22px;
+  padding: 24px;
+  margin-bottom: 22px;
+}
+
+label {
+  display: block;
+  font-weight: 700;
+  margin-bottom: 14px;
+  font-size: 18px;
+}
+
+.input-row {
+  display: flex;
+  gap: 12px;
+}
+
+input,
+select {
+  width: 100%;
+  height: 56px;
+  background: #020617;
+  color: white;
+  border: 1px solid #1e293b;
+  border-radius: 16px;
+  padding: 0 18px;
+  font-size: 16px;
+}
+
+button {
+  border: none;
+  color: white;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.input-row button {
+  min-width: 110px;
+  border-radius: 16px;
+  background: #7c3aed;
+}
+
+.types {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.type {
+  background: #0f172a;
+  border: 2px solid #1e293b;
+  border-radius: 20px;
+  min-height: 90px;
+  padding: 18px;
+  font-size: 16px;
+}
+
+.type.active {
+  border-color: #9333ea;
+  background: #111827;
+}
+
+.download {
+  width: 100%;
+  height: 72px;
+  border-radius: 20px;
+  background: #9333ea;
+  font-size: 22px;
+  margin: 16px 0 24px;
+}
+
+.download:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.progress-box {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 22px;
+  padding: 22px;
+}
+
+.progress-bar {
+  height: 18px;
+  background: #1e293b;
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+#progressFill {
+  width: 0%;
+  height: 100%;
+  background: #a855f7;
+  transition: width 0.25s ease;
+}
+
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  color: #cbd5e1;
+}
+
+.download-link {
+  display: block;
+  text-align: center;
+  margin-top: 22px;
+  padding: 18px;
+  border-radius: 18px;
+  color: white;
+  text-decoration: none;
+  background: #22c55e;
+  font-weight: 800;
+}
+
+@media (max-width: 760px) {
+  .app {
+    padding: 22px;
+  }
+
+  .input-row {
+    flex-direction: column;
+  }
+
+  .input-row button {
+    height: 54px;
+  }
+
+  .types {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .progress-info {
+    flex-direction: column;
+  }
+}
