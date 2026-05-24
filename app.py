@@ -12,7 +12,11 @@ from flask_socketio import SocketIO
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "yt-dlp-web-secret"
 
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
+socketio = SocketIO(
+    app,
+    cors_allowed_origins="*",
+    async_mode="eventlet"
+)
 
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -137,7 +141,6 @@ def get_video_info():
 
         opts = base_ydl_opts(cookie_file)
         opts.update({
-            "quiet": True,
             "skip_download": True,
             "noplaylist": True,
             "ignore_no_formats_error": True,
@@ -227,18 +230,13 @@ def download_task(job_id, url, download_type, quality):
                     "preferredquality": "320",
                 }],
             })
-        else:
-            if quality == "1080p":
-                fmt = "best[height<=1080]/best"
-            elif quality == "720p":
-                fmt = "best[height<=720]/best"
-            elif quality == "480p":
-                fmt = "best[height<=480]/best"
-            else:
-                fmt = "best"
 
+        else:
+            # Importante:
+            # No forzamos calidad aquí.
+            # Dejamos que yt-dlp escoja el mejor formato disponible.
+            # Esto evita "Requested format is not available".
             ydl_opts.update({
-                "format": fmt,
                 "merge_output_format": "mp4",
             })
 
@@ -254,14 +252,27 @@ def download_task(job_id, url, download_type, quality):
         after_files = set(os.listdir(DOWNLOAD_DIR))
         new_files = list(after_files - before_files)
 
-        if new_files:
+        if not new_files:
+            files = [
+                f for f in os.listdir(DOWNLOAD_DIR)
+                if os.path.isfile(os.path.join(DOWNLOAD_DIR, f))
+            ]
+
+            if not files:
+                raise Exception("No se generó ningún archivo.")
+
+            filename = sorted(
+                files,
+                key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
+                reverse=True
+            )[0]
+
+        else:
             filename = sorted(
                 new_files,
                 key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
                 reverse=True
             )[0]
-        else:
-            raise Exception("No se generó ningún archivo. Prueba con otra calidad o con MP3.")
 
         emit_progress(job_id, {
             "status": "done",
@@ -276,6 +287,7 @@ def download_task(job_id, url, download_type, quality):
             "progress": 0,
             "message": f"ERROR: {str(e)}",
         })
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
