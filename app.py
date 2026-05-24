@@ -137,8 +137,10 @@ def get_video_info():
 
         opts = base_ydl_opts(cookie_file)
         opts.update({
+            "quiet": True,
             "skip_download": True,
             "noplaylist": True,
+            "ignore_no_formats_error": True,
         })
 
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -208,16 +210,28 @@ def download_task(job_id, url, download_type, quality):
         before_files = set(os.listdir(DOWNLOAD_DIR))
         cookie_file = get_cookie_file()
 
-        ydl_opts = base_ydl_opts(cookie_file)
-        ydl_opts.update({
+        ydl_opts = {
             "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).160s.%(ext)s"),
             "progress_hooks": [progress_hook(job_id)],
             "noplaylist": download_type != "playlist",
-        })
+            "quiet": True,
+            "no_warnings": True,
+            "noprogress": False,
+            "nopart": False,
+            "ignoreerrors": True,
+        }
+
+        if cookie_file:
+            ydl_opts["cookiefile"] = cookie_file
+
+        # =========================
+        # MP3
+        # =========================
 
         if download_type == "mp3":
+
             ydl_opts.update({
-                "format": "bestaudio/best",
+                "format": "bestaudio",
                 "postprocessors": [{
                     "key": "FFmpegExtractAudio",
                     "preferredcodec": "mp3",
@@ -225,20 +239,52 @@ def download_task(job_id, url, download_type, quality):
                 }],
             })
 
+        # =========================
+        # VIDEO
+        # =========================
+
         else:
+
+            # FORMATO ULTRA COMPATIBLE
+            # evita "Requested format is not available"
+
             if quality == "1080p":
-                fmt = "bv*[height<=1080]+ba/best[height<=1080]/best"
+
+                fmt = (
+                    "bestvideo[height<=1080]"
+                    "+bestaudio/"
+                    "best[height<=1080]/"
+                    "best"
+                )
+
             elif quality == "720p":
-                fmt = "bv*[height<=720]+ba/best[height<=720]/best"
+
+                fmt = (
+                    "bestvideo[height<=720]"
+                    "+bestaudio/"
+                    "best[height<=720]/"
+                    "best"
+                )
+
             elif quality == "480p":
-                fmt = "bv*[height<=480]+ba/best[height<=480]/best"
+
+                fmt = (
+                    "bestvideo[height<=480]"
+                    "+bestaudio/"
+                    "best[height<=480]/"
+                    "best"
+                )
+
             else:
-                fmt = "bv*+ba/best"
+
+                fmt = (
+                    "bestvideo+bestaudio/"
+                    "best"
+                )
 
             ydl_opts.update({
                 "format": fmt,
                 "merge_output_format": "mp4",
-                "format_sort": ["res", "ext:mp4:m4a"],
             })
 
         emit_progress(job_id, {
@@ -254,18 +300,24 @@ def download_task(job_id, url, download_type, quality):
         new_files = list(after_files - before_files)
 
         if new_files:
+
             filename = sorted(
                 new_files,
-                key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
+                key=lambda f: os.path.getmtime(
+                    os.path.join(DOWNLOAD_DIR, f)
+                ),
                 reverse=True
             )[0]
+
         else:
-            files = sorted(
+
+            filename = sorted(
                 os.listdir(DOWNLOAD_DIR),
-                key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
+                key=lambda f: os.path.getmtime(
+                    os.path.join(DOWNLOAD_DIR, f)
+                ),
                 reverse=True
-            )
-            filename = files[0] if files else None
+            )[0]
 
         emit_progress(job_id, {
             "status": "done",
@@ -275,11 +327,11 @@ def download_task(job_id, url, download_type, quality):
         })
 
     except Exception as e:
+
         emit_progress(job_id, {
             "status": "error",
-            "message": str(e),
+            "message": f"ERROR: {str(e)}",
         })
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
