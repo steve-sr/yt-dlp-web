@@ -192,6 +192,7 @@ def download_task(job_id, url, download_type, quality):
             "no_warnings": True,
             "noprogress": False,
             "nopart": False,
+            "cookiefile": "/etc/secrets/cookies.txt",
         }
 
         if download_type == "mp3":
