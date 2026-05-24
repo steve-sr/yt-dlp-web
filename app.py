@@ -2,26 +2,33 @@ import eventlet
 eventlet.monkey_patch()
 
 import os
-import uuid
-import yt_dlp
 import re
+import uuid
+import shutil
+import yt_dlp
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_socketio import SocketIO
-
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "yt-dlp-web-secret"
 
-socketio = SocketIO(
-    app,
-    cors_allowed_origins="*",
-    async_mode="eventlet"
-)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="eventlet")
 
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 jobs = {}
+
+
+def get_cookie_file():
+    secret_cookie = "/etc/secrets/cookies.txt"
+    temp_cookie = "/tmp/cookies.txt"
+
+    if os.path.exists(secret_cookie):
+        shutil.copyfile(secret_cookie, temp_cookie)
+        return temp_cookie
+
+    return None
 
 
 def seconds_to_time(seconds):
@@ -37,6 +44,79 @@ def seconds_to_time(seconds):
         return f"{hours}h {minutes}m"
 
     return f"{minutes}m {secs}s"
+
+
+def clean_text(value):
+    if not value:
+        return ""
+
+    value = str(value)
+    value = re.sub(r"\x1b\[[0-9;]*m", "", value)
+
+    return value.strip()
+
+
+def emit_progress(job_id, payload):
+    jobs[job_id].update(payload)
+
+    socketio.emit("progress", {
+        "job_id": job_id,
+        **jobs[job_id]
+    })
+
+    socketio.sleep(0)
+
+
+def progress_hook(job_id):
+    def hook(d):
+        status = d.get("status")
+
+        if status == "downloading":
+            downloaded = d.get("downloaded_bytes") or 0
+            total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+
+            if total > 0:
+                percent = (downloaded / total) * 100
+            else:
+                raw_percent = clean_text(d.get("_percent_str", "0")).replace("%", "")
+                try:
+                    percent = float(raw_percent)
+                except:
+                    percent = 0
+
+            percent = max(0, min(100, percent))
+
+            emit_progress(job_id, {
+                "status": "downloading",
+                "progress": percent,
+                "message": f"Descargando... {percent:.1f}%",
+                "speed": clean_text(d.get("_speed_str", "")),
+                "eta": clean_text(d.get("_eta_str", "")),
+            })
+
+        elif status == "finished":
+            emit_progress(job_id, {
+                "status": "processing",
+                "progress": 100,
+                "message": "Procesando archivo...",
+            })
+
+    return hook
+
+
+def base_ydl_opts(cookie_file=None):
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": False,
+        "nopart": False,
+        "no_cookies_update": True,
+    }
+
+    if cookie_file:
+        opts["cookiefile"] = cookie_file
+
+    return opts
 
 
 @app.route("/")
@@ -55,14 +135,11 @@ def get_video_info():
     try:
         cookie_file = get_cookie_file()
 
-        opts = {
-            "quiet": True,
+        opts = base_ydl_opts(cookie_file)
+        opts.update({
             "skip_download": True,
             "noplaylist": True,
-        }
-
-        if cookie_file:
-            opts["cookiefile"] = cookie_file
+        })
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -125,96 +202,18 @@ def download_file(job_id):
         as_attachment=True
     )
 
-def clean_text(value):
-    if not value:
-        return ""
-
-    value = str(value)
-    value = re.sub(r"\x1b\[[0-9;]*m", "", value)
-
-    return value.strip()
-
-def emit_progress(job_id, payload):
-    jobs[job_id].update(payload)
-    socketio.emit("progress", {
-        "job_id": job_id,
-        **jobs[job_id]
-    })
-
-
-def progress_hook(job_id):
-    def hook(d):
-        status = d.get("status")
-
-        if status == "downloading":
-            downloaded = d.get("downloaded_bytes") or 0
-            total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
-
-            percent = 0
-
-            if total > 0:
-                percent = (downloaded / total) * 100
-            else:
-                raw_percent = clean_text(d.get("_percent_str", "0"))
-                raw_percent = raw_percent.replace("%", "")
-
-                try:
-                    percent = float(raw_percent)
-                except:
-                    percent = 0
-
-            percent = max(0, min(100, percent))
-
-            speed = clean_text(d.get("_speed_str", ""))
-            eta = clean_text(d.get("_eta_str", ""))
-
-            emit_progress(job_id, {
-                "status": "downloading",
-                "progress": percent,
-                "message": f"Descargando... {percent:.1f}%",
-                "speed": speed,
-                "eta": eta,
-            })
-
-        elif status == "finished":
-            emit_progress(job_id, {
-                "status": "processing",
-                "progress": 100,
-                "message": "Procesando archivo...",
-            })
-
-    return hook
-
-def get_cookie_file():
-    secret_cookie = "/etc/secrets/cookies.txt"
-    temp_cookie = "/tmp/cookies.txt"
-
-    if os.path.exists(secret_cookie):
-        with open(secret_cookie, "rb") as src:
-            with open(temp_cookie, "wb") as dst:
-                dst.write(src.read())
-
-        return temp_cookie
-
-    return None
 
 def download_task(job_id, url, download_type, quality):
     try:
         before_files = set(os.listdir(DOWNLOAD_DIR))
         cookie_file = get_cookie_file()
 
-        ydl_opts = {
+        ydl_opts = base_ydl_opts(cookie_file)
+        ydl_opts.update({
             "outtmpl": os.path.join(DOWNLOAD_DIR, "%(title).160s.%(ext)s"),
             "progress_hooks": [progress_hook(job_id)],
             "noplaylist": download_type != "playlist",
-            "quiet": True,
-            "no_warnings": True,
-            "noprogress": False,
-            "nopart": False,
-        }
-
-        if cookie_file:
-            ydl_opts["cookiefile"] = cookie_file
+        })
 
         if download_type == "mp3":
             ydl_opts.update({
@@ -260,11 +259,12 @@ def download_task(job_id, url, download_type, quality):
                 reverse=True
             )[0]
         else:
-            filename = sorted(
+            files = sorted(
                 os.listdir(DOWNLOAD_DIR),
                 key=lambda f: os.path.getmtime(os.path.join(DOWNLOAD_DIR, f)),
                 reverse=True
-            )[0]
+            )
+            filename = files[0] if files else None
 
         emit_progress(job_id, {
             "status": "done",
@@ -281,8 +281,6 @@ def download_task(job_id, url, download_type, quality):
 
 
 if __name__ == "__main__":
-    import os
-
     port = int(os.environ.get("PORT", 10000))
 
     socketio.run(
