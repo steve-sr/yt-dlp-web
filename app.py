@@ -53,11 +53,16 @@ def get_video_info():
         return jsonify({"error": "URL requerida"}), 400
 
     try:
+        cookie_file = get_cookie_file()
+
         opts = {
             "quiet": True,
             "skip_download": True,
             "noplaylist": True,
         }
+
+        if cookie_file:
+            opts["cookiefile"] = cookie_file
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -207,6 +212,9 @@ def download_task(job_id, url, download_type, quality):
             "noprogress": False,
             "nopart": False,
         }
+
+        if cookie_file:
+            ydl_opts["cookiefile"] = cookie_file
 
         if download_type == "mp3":
             ydl_opts.update({
