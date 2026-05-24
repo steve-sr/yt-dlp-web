@@ -3,57 +3,149 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>YT-DLP Web</title>
+  <title>MediaDrop</title>
+
   <link rel="stylesheet" href="/static/style.css" />
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 </head>
+
 <body>
   <main class="app">
     <section class="hero">
-      <h1>Descarga tus videos favoritos</h1>
-      <p>Rápido, sencillo y optimizado para celular.</p>
+      <div class="badge">
+        <i data-lucide="zap"></i>
+        Web Downloader
+      </div>
+
+      <h1>Descarga videos, audio y playlists</h1>
+      <p>Una app web rápida, limpia y optimizada para celular.</p>
     </section>
 
-    <section class="card">
+    <section class="panel">
       <label>Pega la URL aquí</label>
+
       <div class="input-row">
-        <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=..." />
-        <button onclick="pasteUrl()">Pegar</button>
+        <div class="url-box">
+          <i data-lucide="link"></i>
+          <input id="url" type="text" placeholder="https://www.youtube.com/watch?v=..." />
+        </div>
+
+        <button class="paste-btn" onclick="pasteUrl()">
+          <i data-lucide="clipboard"></i>
+          Pegar
+        </button>
+      </div>
+
+      <button class="preview-btn" onclick="loadInfo()">
+        <i data-lucide="search"></i>
+        Obtener información
+      </button>
+    </section>
+
+    <section id="preview" class="preview hidden">
+      <img id="thumbnail" src="" alt="Miniatura" />
+
+      <div class="preview-info">
+        <h2 id="videoTitle">Título del video</h2>
+
+        <div class="meta">
+          <span>
+            <i data-lucide="user"></i>
+            <span id="uploader">Canal</span>
+          </span>
+
+          <span>
+            <i data-lucide="clock"></i>
+            <span id="duration">Duración</span>
+          </span>
+        </div>
       </div>
     </section>
 
     <section class="types">
-      <button class="type active" data-type="video">Video</button>
-      <button class="type" data-type="mp3">MP3</button>
-      <button class="type" data-type="playlist">Playlist</button>
-      <button class="type" data-type="reels">Reels / TikTok</button>
+      <button class="type active" data-type="video">
+        <i data-lucide="video"></i>
+        <strong>Video</strong>
+        <span>MP4 en buena calidad</span>
+      </button>
+
+      <button class="type" data-type="mp3">
+        <i data-lucide="music"></i>
+        <strong>MP3</strong>
+        <span>Audio extraído</span>
+      </button>
+
+      <button class="type" data-type="playlist">
+        <i data-lucide="list-video"></i>
+        <strong>Playlist</strong>
+        <span>Lista completa</span>
+      </button>
+
+      <button class="type" data-type="reels">
+        <i data-lucide="smartphone"></i>
+        <strong>Reels / TikTok</strong>
+        <span>Videos cortos</span>
+      </button>
     </section>
 
-    <section class="card">
-      <label>Calidad</label>
-      <select id="quality">
-        <option value="best">Máxima calidad</option>
-        <option value="1080p">1080p</option>
-        <option value="720p">720p</option>
-        <option value="480p">480p</option>
-      </select>
+    <section class="settings-grid">
+      <div class="panel small">
+        <label>Calidad</label>
+
+        <div class="select-wrap">
+          <i data-lucide="sliders-horizontal"></i>
+          <select id="quality">
+            <option value="best">Máxima calidad</option>
+            <option value="1080p">1080p</option>
+            <option value="720p">720p</option>
+            <option value="480p">480p</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="panel small trust">
+        <i data-lucide="shield-check"></i>
+        <div>
+          <strong>Procesamiento seguro</strong>
+          <span>El archivo se genera en el servidor y luego se descarga desde el navegador.</span>
+        </div>
+      </div>
     </section>
 
     <button id="downloadBtn" class="download" onclick="startDownload()">
+      <i data-lucide="download"></i>
       Iniciar descarga
     </button>
 
-    <section class="progress-box">
-      <div class="progress-bar">
-        <div id="progressFill"></div>
-      </div>
-      <div class="progress-info">
+    <section id="progressBox" class="progress-box hidden">
+      <div class="loader-ring">
+        <svg viewBox="0 0 120 120">
+          <circle class="bg" cx="60" cy="60" r="52"></circle>
+          <circle id="ringProgress" class="progress" cx="60" cy="60" r="52"></circle>
+        </svg>
+
         <span id="progressText">0%</span>
-        <span id="statusText">Listo para descargar</span>
+      </div>
+
+      <div class="progress-content">
+        <h3 id="statusText">Preparando descarga...</h3>
+
+        <div class="bar">
+          <div id="progressFill"></div>
+        </div>
+
+        <div class="download-stats">
+          <span id="speedText">Velocidad: --</span>
+          <span id="etaText">ETA: --</span>
+        </div>
       </div>
     </section>
 
-    <a id="downloadLink" class="download-link" href="#" style="display:none;">
-      Descargar archivo
+    <a id="downloadLink" class="download-link hidden" href="#">
+      <i data-lucide="file-down"></i>
+      Descargar archivo listo
     </a>
   </main>
 
