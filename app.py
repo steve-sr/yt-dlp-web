@@ -465,23 +465,56 @@ def build_ydl_options(job_id, download_type, quality):
         })
 
     elif download_type == "reels":
+        # Formato compatible para ProPresenter:
+        # intenta MP4 H.264 + AAC/M4A primero.
         ydl_opts.update({
-            "format": "best",
+            "format": (
+                "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/"
+                "best[ext=mp4][vcodec^=avc1]/"
+                "best[ext=mp4]/"
+                "best"
+            ),
+            "merge_output_format": "mp4",
+            "postprocessors": [{
+                "key": "FFmpegVideoConvertor",
+                "preferedformat": "mp4",
+            }],
         })
 
     else:
         if quality and quality != "best":
             try:
                 height = int(quality)
-                fmt = f"bv*[height<={height}]+ba/b[height<={height}]/best[height<={height}]/best"
+
+                fmt = (
+                    f"bestvideo[ext=mp4][vcodec^=avc1][height<={height}]+bestaudio[ext=m4a]/"
+                    f"best[ext=mp4][vcodec^=avc1][height<={height}]/"
+                    f"bestvideo[height<={height}]+bestaudio/"
+                    f"best[height<={height}]/"
+                    "best"
+                )
             except ValueError:
-                fmt = "bv*+ba/best"
+                fmt = (
+                    "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/"
+                    "best[ext=mp4][vcodec^=avc1]/"
+                    "best"
+                )
         else:
-            fmt = "bv*+ba/best"
+            fmt = (
+                "bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/"
+                "best[ext=mp4][vcodec^=avc1]/"
+                "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+                "best[ext=mp4]/"
+                "best"
+            )
 
         ydl_opts.update({
             "format": fmt,
             "merge_output_format": "mp4",
+            "postprocessors": [{
+                "key": "FFmpegVideoConvertor",
+                "preferedformat": "mp4",
+            }],
         })
 
     return ydl_opts
